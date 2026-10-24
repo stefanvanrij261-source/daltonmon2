@@ -4353,8 +4353,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
     let currentPack = [];
     let openedPackCards = [];
     let allCards = [];
-    let binderFilter = 'ALL';
+    let binderFilter = 'GREY';
     let binderSearch = '';
+    let deckFilter = 'GREY';
+    let deckSearch = '';
     let totalPacksOpened = 0;
     let userCoins = 0;
     let playerDeckIds = [];
@@ -5032,6 +5034,34 @@ Check your Browserslist config to be sure that your targets are set up correctly
       playerDeckIds = [];
       await syncPlayerProfile();
       window.NorthernGoUI.refresh();
+    }
+
+    function setDeckFilter(filter) {
+      deckFilter = filter;
+      window.NorthernGoUI.refresh();
+    }
+
+    function setDeckSearch(value) {
+      deckSearch = value || '';
+      window.NorthernGoUI.refresh();
+    }
+
+    async function toggleDeckCardGroup(encodedName, rarity, direction) {
+      const name = decodeURIComponent(encodedName);
+      const copies = (allCards || []).filter(card =>
+        String(card.name || '').trim().toLowerCase() === name.toLowerCase() &&
+        String(card.rarity || 'GREY').toUpperCase() === rarity
+      );
+      const selectedIds = new Set(playerDeckIds);
+      const selected = copies.filter(card => selectedIds.has(card.id));
+
+      if (direction === 'remove') {
+        const card = selected[selected.length - 1];
+        if (card) await toggleCardInDeck(card.id);
+        return;
+      }
+      const card = copies.find(copy => !selectedIds.has(copy.id));
+      if (card) await toggleCardInDeck(card.id);
     }
 
     // Helper to generate full HP &amp; combat attacks for the exact card pool with rarity multipliers
@@ -6962,13 +6992,20 @@ Check your Browserslist config to be sure that your targets are set up correctly
 &lt;/body&gt;&lt;/html&gt;</textarea>
             </div>
           </main>
-        </main><nav class="ng-bottomnav" id="ng-nav"><button type="button" class="ng-nav-btn" data-ng-view="pack"><span>📦</span>Pack Opener</button><button type="button" class="ng-nav-btn" data-ng-view="binder"><span>📖</span>Card Binder</button><button type="button" class="ng-nav-btn" data-ng-view="stats"><span>📈</span>Vault Stats</button><button type="button" class="ng-nav-btn" data-ng-view="account"><span>⚙️</span>Account &amp; Vault</button><button type="button" class="ng-nav-btn" data-ng-view="deck"><span>⚔️</span>Deck Builder</button><button type="button" class="ng-nav-btn" data-ng-view="battle"><span>⚔️</span>AI Arena</button><button type="button" class="ng-nav-btn ng-nav-active" data-ng-view="source" aria-current="page"><span>💻</span>Game Code</button></nav></div>
+        </main><nav class="ng-bottomnav" id="ng-nav"><button type="button" class="ng-nav-btn" data-ng-view="pack"><span>📦</span>Pack Opener</button><button type="button" class="ng-nav-btn" data-ng-view="binder"><span>📖</span>Card Binder</button><button type="button" class="ng-nav-btn" data-ng-view="stats"><span>📈</span>Vault Stats</button><button type="button" class="ng-nav-btn" data-ng-view="account"><span>⚙️</span>Account &amp; Vault</button><button type="button" class="ng-nav-btn" data-ng-view="deck"><span>⚔️</span>Deck Builder</button><button type="button" class="ng-nav-btn" data-ng-view="battle"><span>⚔️</span>AI Arena</button><button type="button" class="ng-nav-btn" data-ng-view="online"><span>🌐</span>Online</button><button type="button" class="ng-nav-btn ng-nav-active" data-ng-view="source" aria-current="page"><span>💻</span>Game Code</button></nav></div>
 
   
   <script>
     
     // Keep the game and its save data on this device; no hosting-site bridge or account is required.
     const LOCAL_SAVE_PREFIX = 'card-vault-standalone-v1:';
+    const ONLINE_PLAYER_KEY = 'card-vault-p2p-player-v1';
+    let peerConnection = null;
+    let peerDataChannel = null;
+    let onlineMatch = null;
+    let onlineStatus = '';
+    let onlineOfferCode = '';
+    let onlineAnswerCode = '';
     const localVaultDb = {
       getToken: () => 'local-vault',
       login: async () => 'local-vault',
@@ -7050,6 +7087,441 @@ Check your Browserslist config to be sure that your targets are set up correctly
       return `<span class="relative block ${classes} overflow-hidden rounded-xl bg-black/40"><img src="${image}" alt="" class="h-full w-full object-cover" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.style.display='flex'">${fallback}</span>`;
     }
 
+    function readOnlineConfig() {
+      try {
+        const player = JSON.parse(window.localStorage.getItem(ONLINE_PLAYER_KEY) || '{}');
+        return { name: typeof player.name === 'string' ? player.name : '' };
+      } catch (error) {
+        console.warn('Could not read online player settings:', error);
+        return { name: '' };
+      }
+    }
+
+    function saveOnlinePlayerName() {
+      const name = document.getElementById('online-player-name')?.value.trim() || '';
+      if (!name || name.length > 24) throw new Error('Player name must be 1–24 characters.');
+      window.localStorage.setItem(ONLINE_PLAYER_KEY, JSON.stringify({ name }));
+      return name;
+    }
+
+    function encodeSignalCode(description) {
+      const binary = unescape(encodeURIComponent(JSON.stringify({
+        version: 1,
+        type: description.type,
+        sdp: description.sdp
+      })));
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function decodeSignalCode(code, expectedType) {
+      try {
+        const normalized = code.trim().replace(/-/g, '+').replace(/_/g, '/');
+        const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
+        const encoded = Array.from(binary, character =>
+          `%${character.charCodeAt(0).toString(16).padStart(2, '0')}`).join('');
+        const signal = JSON.parse(decodeURIComponent(encoded));
+        if (signal.version !== 1 || signal.type !== expectedType || typeof signal.sdp !== 'string') {
+          throw new Error(`Paste a valid peer ${expectedType} code.`);
+        }
+        return { type: signal.type, sdp: signal.sdp };
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Paste a valid')) throw error;
+        throw new Error('That connection code is invalid or incomplete. Copy the full code and try again.');
+      }
+    }
+
+    function waitForIceGathering(connection) {
+      if (connection.iceGatheringState === 'complete') return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+          connection.removeEventListener('icegatheringstatechange', onGathering);
+          reject(new Error('Connection setup timed out while preparing the peer code.'));
+        }, 20000);
+        function onGathering() {
+          if (connection.iceGatheringState !== 'complete') return;
+          window.clearTimeout(timeout);
+          connection.removeEventListener('icegatheringstatechange', onGathering);
+          resolve();
+        }
+        connection.addEventListener('icegatheringstatechange', onGathering);
+      });
+    }
+
+    function bindPeerConnection(connection, channel) {
+      peerConnection = connection;
+      if (channel) {
+        peerDataChannel = channel;
+        channel.onopen = handlePeerConnected;
+        channel.onmessage = handlePeerMessage;
+        channel.onclose = () => {
+          onlineStatus = 'Peer connection closed.';
+          window.NorthernGoUI.refresh();
+        };
+        channel.onerror = () => {
+          onlineStatus = 'The peer data connection encountered an error.';
+          window.NorthernGoUI.refresh();
+        };
+      } else {
+        connection.ondatachannel = event => bindPeerConnection(connection, event.channel);
+      }
+      connection.onconnectionstatechange = () => {
+        if (connection.connectionState === 'failed') {
+          onlineStatus = 'Direct connection failed. These networks may require a server or may block peer connections.';
+          window.NorthernGoUI.refresh();
+        }
+      };
+    }
+
+    function makeOnlineMatch(role, name) {
+      const id = crypto.randomUUID();
+      const player = { name, deck: onlineDeckPayload() };
+      const host = role === 'host' ? player : { name: '', deck: null };
+      const guest = role === 'guest' ? player : { name: '', deck: null };
+      onlineMatch = {
+        role,
+        row: {
+          id,
+          room_code: 'Direct peer',
+          host_name: host.name,
+          guest_name: guest.name,
+          host_deck: host.deck,
+          guest_deck: guest.deck,
+          state: null,
+          status: 'waiting',
+          revision: 0
+        }
+      };
+    }
+
+    async function createPeerOffer() {
+      try {
+        const name = saveOnlinePlayerName();
+        onlineDeckPayload();
+        leaveOnlineRoom(false);
+        const connection = new RTCPeerConnection({ iceServers: [] });
+        const channel = connection.createDataChannel('card-vault-match');
+        bindPeerConnection(connection, channel);
+        makeOnlineMatch('host', name);
+        await connection.setLocalDescription(await connection.createOffer());
+        await waitForIceGathering(connection);
+        onlineOfferCode = encodeSignalCode(connection.localDescription);
+        onlineStatus = 'Offer ready. Send it to your opponent; paste their answer below when they return it.';
+      } catch (error) {
+        onlineStatus = error?.message || 'Could not create the peer offer.';
+      }
+      window.NorthernGoUI.refresh();
+    }
+
+    async function createPeerAnswer() {
+      try {
+        const name = saveOnlinePlayerName();
+        onlineDeckPayload();
+        const offerCode = document.getElementById('online-offer-input')?.value || '';
+        const offer = decodeSignalCode(offerCode, 'offer');
+        leaveOnlineRoom(false);
+        const connection = new RTCPeerConnection({ iceServers: [] });
+        bindPeerConnection(connection, null);
+        makeOnlineMatch('guest', name);
+        await connection.setRemoteDescription(offer);
+        await connection.setLocalDescription(await connection.createAnswer());
+        await waitForIceGathering(connection);
+        onlineAnswerCode = encodeSignalCode(connection.localDescription);
+        onlineStatus = 'Answer ready. Send it back to the player who created the offer.';
+      } catch (error) {
+        onlineStatus = error?.message || 'Could not create a peer answer.';
+      }
+      window.NorthernGoUI.refresh();
+    }
+
+    async function applyPeerAnswer() {
+      try {
+        if (!peerConnection || !onlineMatch || onlineMatch.role !== 'host') {
+          throw new Error('Create a connection offer first.');
+        }
+        const answerCode = document.getElementById('online-answer-input')?.value || '';
+        const answer = decodeSignalCode(answerCode, 'answer');
+        await peerConnection.setRemoteDescription(answer);
+        onlineStatus = 'Answer accepted. Connecting directly to your opponent…';
+      } catch (error) {
+        onlineStatus = error?.message || 'Could not apply the peer answer.';
+      }
+      window.NorthernGoUI.refresh();
+    }
+
+    function copyPeerCode(code) {
+      if (!code) return;
+      navigator.clipboard.writeText(code).then(() => {
+        onlineStatus = 'Connection code copied.';
+        window.NorthernGoUI.refresh();
+      }).catch(error => {
+        onlineStatus = error?.message || 'Could not copy the code. Select and copy it manually.';
+        window.NorthernGoUI.refresh();
+      });
+    }
+
+    function handlePeerConnected() {
+      if (!onlineMatch || !peerDataChannel || peerDataChannel.readyState !== 'open') return;
+      const ownDeck = onlineMatch.row[`${onlineMatch.role}_deck`];
+      const ownName = onlineMatch.row[`${onlineMatch.role}_name`];
+      peerDataChannel.send(JSON.stringify({ type: 'hello', name: ownName, deck: ownDeck }));
+      onlineStatus = 'Direct connection established. Syncing decks…';
+      window.NorthernGoUI.refresh();
+    }
+
+    function handlePeerMessage(event) {
+      try {
+        if (!onlineMatch) return;
+        const message = JSON.parse(event.data);
+        if (message.type === 'hello') {
+          if (typeof message.name !== 'string' || !Array.isArray(message.deck) ||
+              message.deck.length < 10 || message.deck.length > 30) {
+            throw new Error('The other player sent an invalid name or deck.');
+          }
+          const opponentRole = onlineMatch.role === 'host' ? 'guest' : 'host';
+          onlineMatch.row[`${opponentRole}_name`] = message.name.slice(0, 24);
+          onlineMatch.row[`${opponentRole}_deck`] = message.deck;
+          if (onlineMatch.role === 'host') maybeStartOnlineMatch();
+          window.NorthernGoUI.refresh();
+          return;
+        }
+        if (message.type === 'state' && message.state &&
+            ['in_progress', 'completed'].includes(message.state.status) &&
+            Number.isInteger(message.revision) &&
+            message.revision > onlineMatch.row.revision) {
+          onlineMatch.row.state = message.state;
+          onlineMatch.row.status = message.state.status;
+          onlineMatch.row.revision = message.revision;
+          onlineStatus = 'Match updated.';
+          window.NorthernGoUI.refresh();
+          return;
+        }
+        throw new Error('Received an unsupported peer message.');
+      } catch (error) {
+        onlineStatus = error?.message || 'Could not read the other player’s message.';
+        window.NorthernGoUI.refresh();
+      }
+    }
+
+    function onlineDeckPayload() {
+      if (playerDeckIds.length < 10 || playerDeckIds.length > 30) {
+        throw new Error('Your deck must contain 10–30 cards before you can play online.');
+      }
+      const byId = new Map((allCards || []).map(card => [card.id, card]));
+      return playerDeckIds.map(id => {
+        const card = byId.get(id);
+        if (!card) throw new Error('A card in your deck is missing from the collection. Rebuild your deck and try again.');
+        return {
+          id: card.id,
+          name: card.name,
+          rarity: card.rarity,
+          power: card.power,
+          type: card.type,
+          description: card.description,
+          serialNumber: card.serialNumber
+        };
+      });
+    }
+
+    function leaveOnlineRoom(refresh = true) {
+      if (peerDataChannel) {
+        peerDataChannel.onopen = null;
+        peerDataChannel.onmessage = null;
+        peerDataChannel.onclose = null;
+        peerDataChannel.onerror = null;
+        if (peerDataChannel.readyState === 'open') peerDataChannel.close();
+      }
+      if (peerConnection) {
+        peerConnection.ondatachannel = null;
+        peerConnection.onconnectionstatechange = null;
+        peerConnection.close();
+      }
+      peerDataChannel = null;
+      peerConnection = null;
+      onlineMatch = null;
+      onlineOfferCode = '';
+      onlineAnswerCode = '';
+      if (refresh) {
+        onlineStatus = 'Disconnected from the peer.';
+        window.NorthernGoUI.refresh();
+      }
+    }
+
+    function createOnlineBattleSide(name, deck) {
+      const cards = deck.map(card => initCardCombatStats(card));
+      for (let index = cards.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [cards[index], cards[swapIndex]] = [cards[swapIndex], cards[index]];
+      }
+      const selected = cards.slice(0, 10);
+      const hand = selected.splice(0, 3);
+      const drawDeck = selected;
+      const active = hand.shift();
+      if (drawDeck.length > 0) hand.push(drawDeck.shift());
+      return { name, deck: drawDeck, hand, grave: [], active, awaitingReplacement: false };
+    }
+
+    function maybeStartOnlineMatch() {
+      if (!onlineMatch || onlineMatch.role !== 'host' || onlineMatch.row.status !== 'waiting') return;
+      const row = onlineMatch.row;
+      if (row.status !== 'waiting' || !row.host_deck || !row.guest_deck) return;
+      const state = {
+        players: {
+          host: createOnlineBattleSide(row.host_name || 'Host', row.host_deck),
+          guest: createOnlineBattleSide(row.guest_name || 'Guest', row.guest_deck)
+        },
+        turn: 'host',
+        status: 'in_progress',
+        winner: null,
+        history: ['⚔️ Online match started! Host takes the first turn.']
+      };
+      row.state = state;
+      row.status = 'in_progress';
+      row.revision++;
+      if (!sendPeerMessage({ type: 'state', state, revision: row.revision })) return;
+      onlineStatus = 'Both decks are ready. The match has started!';
+      window.NorthernGoUI.refresh();
+    }
+
+    function sendPeerMessage(message) {
+      if (!peerDataChannel || peerDataChannel.readyState !== 'open') {
+        onlineStatus = 'The direct peer connection is not open yet.';
+        window.NorthernGoUI.refresh();
+        return false;
+      }
+      try {
+        peerDataChannel.send(JSON.stringify(message));
+        return true;
+      } catch (error) {
+        onlineStatus = error?.message || 'Could not send data to the other player.';
+        window.NorthernGoUI.refresh();
+        return false;
+      }
+    }
+
+    function finishOnlineMatchIfEmpty(state, role) {
+      const side = state.players[role];
+      const opponentRole = role === 'host' ? 'guest' : 'host';
+      const opponent = state.players[opponentRole];
+      if (!side.active && !side.hand.some(card => card.currentHp > 0) && side.deck.length === 0) {
+        state.status = 'completed';
+        state.winner = opponentRole;
+        state.history.unshift(`🏆 ${opponent.name} wins the match!`);
+        return true;
+      }
+      return false;
+    }
+
+    function promoteOnlineOpponent(state, role) {
+      const opponentRole = role === 'host' ? 'guest' : 'host';
+      const opponent = state.players[opponentRole];
+      if (opponent.active && opponent.active.currentHp > 0) return;
+      if (opponent.active) opponent.grave.unshift(opponent.active);
+      opponent.active = opponent.deck.shift() || opponent.hand.shift() || null;
+      if (opponent.active) {
+        state.history.unshift(`🃏 ${opponent.name} sends ${opponent.active.name} to the battlefield.`);
+      }
+    }
+
+    async function saveOnlineState(state, expectedRevision) {
+      if (!onlineMatch || onlineMatch.row.revision !== expectedRevision) {
+        throw new Error('The match changed before this move could be sent. Wait for the latest turn.');
+      }
+      const nextRevision = expectedRevision + 1;
+      if (!sendPeerMessage({ type: 'state', state, revision: nextRevision })) {
+        throw new Error(onlineStatus || 'Could not send the move to the other player.');
+      }
+      onlineMatch.row.state = state;
+      onlineMatch.row.status = state.status;
+      onlineMatch.row.revision = nextRevision;
+      window.NorthernGoUI.refresh();
+    }
+
+    async function onlineAttack(attackIndex) {
+      if (!onlineMatch?.row?.state || onlineMatch.row.status !== 'in_progress') return;
+      const original = onlineMatch.row.state;
+      if (original.turn !== onlineMatch.role) return;
+      const state = JSON.parse(JSON.stringify(original));
+      const side = state.players[onlineMatch.role];
+      const opponentRole = onlineMatch.role === 'host' ? 'guest' : 'host';
+      const opponent = state.players[opponentRole];
+      if (side.awaitingReplacement || !side.active || !opponent.active) return;
+      const priorBattle = activeBattle;
+      activeBattle = {
+        roundHistory: state.history,
+        playerDeck: side.deck,
+        playerHand: side.hand,
+        playerGrave: side.grave,
+        activePlayerCard: side.active,
+        aiDeck: opponent.deck,
+        aiGrave: opponent.grave,
+        activeAiCard: opponent.active,
+        status: 'in_progress'
+      };
+      try {
+        executeActionEffect(side.active, opponent.active, attackIndex, true);
+        side.active = activeBattle.activePlayerCard;
+        opponent.active = activeBattle.activeAiCard;
+        state.history = activeBattle.roundHistory;
+      } finally {
+        activeBattle = priorBattle;
+      }
+      if (side.active?.currentHp <= 0) {
+        side.grave.unshift(side.active);
+        side.active = null;
+        if (!side.hand.some(card => card.currentHp > 0) && side.deck.length > 0) {
+          side.hand.push(side.deck.shift());
+        }
+        side.awaitingReplacement = side.hand.some(card => card.currentHp > 0);
+        if (!side.awaitingReplacement) finishOnlineMatchIfEmpty(state, onlineMatch.role);
+      }
+      if (opponent.active?.currentHp <= 0) {
+        opponent.grave.unshift(opponent.active);
+        opponent.active = null;
+        promoteOnlineOpponent(state, onlineMatch.role);
+        if (!opponent.active && opponent.hand.length === 0 && opponent.deck.length === 0) {
+          state.status = 'completed';
+          state.winner = onlineMatch.role;
+          state.history.unshift(`🏆 ${side.name} wins the match!`);
+        }
+      }
+      if (state.status !== 'completed' && !side.awaitingReplacement) state.turn = opponentRole;
+      try {
+        await saveOnlineState(state, onlineMatch.row.revision);
+      } catch (error) {
+        onlineStatus = error?.message || 'Could not save that turn.';
+        window.NorthernGoUI.refresh();
+      }
+    }
+
+    async function onlineChooseCard(handIndex) {
+      if (!onlineMatch?.row?.state || onlineMatch.row.status !== 'in_progress') return;
+      const original = onlineMatch.row.state;
+      if (original.turn !== onlineMatch.role) return;
+      const state = JSON.parse(JSON.stringify(original));
+      const side = state.players[onlineMatch.role];
+      const cardIndex = Number(handIndex);
+      if (!Number.isInteger(cardIndex) || cardIndex < 0 || cardIndex >= side.hand.length || side.hand[cardIndex].currentHp <= 0) return;
+      if (!side.awaitingReplacement && (!side.active || side.active.instanceId === side.hand[cardIndex].instanceId)) return;
+      const [chosen] = side.hand.splice(cardIndex, 1);
+      if (side.awaitingReplacement) {
+        side.active = chosen;
+        side.awaitingReplacement = false;
+        if (side.deck.length) side.hand.push(side.deck.shift());
+        state.history.unshift(`🛡️ ${side.name} sent ${chosen.name} onto the battlefield.`);
+      } else {
+        side.hand.splice(cardIndex, 0, side.active);
+        side.active = chosen;
+        state.history.unshift(`🔄 ${side.name} swapped active cards and spent the turn.`);
+        state.turn = onlineMatch.role === 'host' ? 'guest' : 'host';
+      }
+      try {
+        await saveOnlineState(state, onlineMatch.row.revision);
+      } catch (error) {
+        onlineStatus = error?.message || 'Could not save that move.';
+        window.NorthernGoUI.refresh();
+      }
+    }
+
     // State variables hoisted at top
     let userLoggedIn = true;
     let authMode = 'login'; // 'login' or 'register'
@@ -7058,8 +7530,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
     let currentPack = [];
     let openedPackCards = [];
     let allCards = [];
-    let binderFilter = 'ALL';
+    let binderFilter = 'GREY';
     let binderSearch = '';
+    let deckFilter = 'GREY';
+    let deckSearch = '';
     let totalPacksOpened = 0;
     let userCoins = 0;
     let playerDeckIds = [];
@@ -7740,6 +8214,34 @@ Check your Browserslist config to be sure that your targets are set up correctly
       playerDeckIds = [];
       await syncPlayerProfile();
       window.NorthernGoUI.refresh();
+    }
+
+    function setDeckFilter(filter) {
+      deckFilter = filter;
+      window.NorthernGoUI.refresh();
+    }
+
+    function setDeckSearch(value) {
+      deckSearch = value || '';
+      window.NorthernGoUI.refresh();
+    }
+
+    async function toggleDeckCardGroup(encodedName, rarity, direction) {
+      const name = decodeURIComponent(encodedName);
+      const copies = (allCards || []).filter(card =>
+        String(card.name || '').trim().toLowerCase() === name.toLowerCase() &&
+        String(card.rarity || 'GREY').toUpperCase() === rarity
+      );
+      const selectedIds = new Set(playerDeckIds);
+      const selected = copies.filter(card => selectedIds.has(card.id));
+
+      if (direction === 'remove') {
+        const card = selected[selected.length - 1];
+        if (card) await toggleCardInDeck(card.id);
+        return;
+      }
+      const card = copies.find(copy => !selectedIds.has(copy.id));
+      if (card) await toggleCardInDeck(card.id);
     }
 
     // Helper to generate full HP & combat attacks for the exact card pool with rarity multipliers
@@ -8440,12 +8942,25 @@ Check your Browserslist config to be sure that your targets are set up correctly
         if (!userLoggedIn) return renderAuthModal();
 
         const searchLower = (binderSearch || '').toLowerCase().trim();
-        const filteredCards = (allCards || []).filter(c => {
-          if (!c) return false;
-          const matchRarity = binderFilter === 'ALL' || (c.rarity || '').toUpperCase() === binderFilter;
-          const matchSearch = !searchLower || (c.name || '').toLowerCase().includes(searchLower) || (c.type || '').toLowerCase().includes(searchLower);
-          return matchRarity && matchSearch;
+        const rarityOrder = ['GREY', 'GREEN', 'BLUE', 'PURPLE', 'GOLD', 'BLACK'];
+        const groupedCards = new Map();
+        (allCards || []).forEach(card => {
+          if (!card) return;
+          const rarity = String(card.rarity || 'GREY').toUpperCase();
+          const name = String(card.name || '').trim();
+          const key = `${rarity}:${name.toLowerCase()}`;
+          const group = groupedCards.get(key);
+          if (group) group.count++;
+          else groupedCards.set(key, { card, rarity, name, count: 1 });
         });
+        const filteredCards = Array.from(groupedCards.values())
+          .filter(group => {
+            const matchRarity = group.rarity === binderFilter;
+            const matchSearch = !searchLower || group.name.toLowerCase().includes(searchLower) ||
+              String(group.card.type || '').toLowerCase().includes(searchLower);
+            return matchRarity && matchSearch;
+          })
+          .sort((a, b) => a.name.localeCompare(b.name));
 
         return `
           <main class="max-w-6xl mx-auto p-4 sm:p-6 pb-28">
@@ -8454,10 +8969,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
                 <h2 class="text-2xl font-black text-white flex items-center gap-2">
                   <span>Collector Binder</span>
                   <span class="text-xs bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-lg text-slate-300">
-                    ${(allCards || []).length} Total Cards
+                    ${(allCards || []).length} Total Copies
                   </span>
                 </h2>
-                <p class="text-xs text-slate-400 mt-0.5">Persistently synced to your personal cloud profile.</p>
+                <p class="text-xs text-slate-400 mt-0.5">Browse one rarity at a time. Matching duplicates are grouped together.</p>
               </div>
 
               <!-- Search Bar -->
@@ -8469,9 +8984,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
               </div>
             </div>
 
-            <!-- Filter tabs -->
+            <!-- Rarity pages -->
             <div class="flex items-center gap-1.5 overflow-x-auto pb-2 mb-6 scrollbar-none">
-              ${['ALL', 'GREY', 'GREEN', 'BLUE', 'PURPLE', 'GOLD', 'BLACK'].map(rf => {
+              ${rarityOrder.map(rf => {
                 const isSelected = binderFilter === rf;
                 const count = rf === 'ALL' ? (allCards || []).length : (statsCollection[rf.toLowerCase()] || 0);
                 return `
@@ -8481,7 +8996,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
                         ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md' 
                         : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
                     }">
-                    ${rf} (${count})
+                    ${RARITIES[rf].name} (${count})
                   </button>
                 `;
               }).join('')}
@@ -8490,16 +9005,17 @@ Check your Browserslist config to be sure that your targets are set up correctly
             <!-- Cards Grid -->
             ${filteredCards.length === 0 ? `
               <div class="text-center py-20 bg-slate-900/30 border border-slate-800 rounded-2xl">
-                <span class="text-4xl block mb-2">🔍</span>
-                <p class="text-slate-400 font-semibold text-sm">No cards matched your filter.</p>
-                <p class="text-slate-500 text-xs mt-1">Try resetting the filter or open new booster packs!</p>
+                <span class="text-4xl block mb-2">${searchLower ? '🔍' : '🎴'}</span>
+                <p class="text-slate-400 font-semibold text-sm">${searchLower ? 'No cards matched your search.' : `No ${RARITIES[binderFilter].name.toLowerCase()} cards yet.`}</p>
+                <p class="text-slate-500 text-xs mt-1">${searchLower ? 'Try another card name or type.' : 'Open booster packs to collect cards of this rarity.'}</p>
               </div>
             ` : `
               <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                ${filteredCards.map((c, i) => {
+                ${filteredCards.map(({ card: c, count }) => {
                   const rData = RARITIES[c.rarity] || RARITIES.GREY;
                   return `
                     <div class="rounded-2xl border-2 ${rData.borderClass} ${rData.bgClass} p-3.5 flex flex-col justify-between aspect-[5/7] ${rData.glow} relative group transition-transform hover:-translate-y-1 shadow-lg">
+                      ${count > 1 ? `<span aria-label="${count} copies" title="${count} copies" class="absolute top-2 right-2 z-20 min-w-7 h-7 px-1 rounded-full bg-amber-400 text-slate-950 border-2 border-slate-950 flex items-center justify-center text-xs font-black shadow-lg">×${count}</span>` : ''}
                       <div class="flex items-center justify-between">
                         <span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${rData.badge}">
                           ${rData.tier}
@@ -8651,6 +9167,27 @@ Check your Browserslist config to be sure that your targets are set up correctly
         const totalPower = deckCards.reduce((acc, c) => acc + (c.power || 0), 0);
         const avgPower = deckCount > 0 ? Math.round(totalPower / deckCount) : 0;
         const isLegal = deckCount >= 10 && deckCount <= 30;
+        const rarityOrder = ['GREY', 'GREEN', 'BLUE', 'PURPLE', 'GOLD', 'BLACK'];
+        const searchLower = deckSearch.trim().toLowerCase();
+        const groupedCards = new Map();
+        (allCards || []).forEach(card => {
+          if (!card) return;
+          const rarity = String(card.rarity || 'GREY').toUpperCase();
+          const name = String(card.name || '').trim();
+          const key = `${rarity}:${name.toLowerCase()}`;
+          const group = groupedCards.get(key);
+          if (group) group.cards.push(card);
+          else groupedCards.set(key, { card, rarity, name, cards: [card] });
+        });
+        const selectedCards = Array.from(groupedCards.values())
+          .map(group => ({
+            ...group,
+            selectedCount: group.cards.filter(card => playerDeckIds.includes(card.id)).length
+          }))
+          .filter(group => group.rarity === deckFilter &&
+            (!searchLower || group.name.toLowerCase().includes(searchLower) ||
+              String(group.card.type || '').toLowerCase().includes(searchLower)))
+          .sort((a, b) => a.name.localeCompare(b.name));
 
         return `
           <main class="max-w-6xl mx-auto p-4 sm:p-6 pb-28">
@@ -8658,14 +9195,14 @@ Check your Browserslist config to be sure that your targets are set up correctly
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-6 shadow-xl">
               <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
-                  <span class="text-xs uppercase font-extrabold tracking-widest text-amber-500">Battle Preparation</span>
+                  <span class="text-xs uppercase font-extrabold tracking-widest text-amber-500">Battle Preparation • ${RARITIES[deckFilter].name} Cards</span>
                   <h2 class="text-2xl font-black text-white flex items-center gap-2">
-                    <span>Deck Construction</span>
+                    <span>Build Combat Deck</span>
                     <span class="text-xs px-2.5 py-0.5 rounded-full border ${isLegal ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border-rose-500/30'}">
                       ${deckCount} / 30 Cards (Min: 10)
                     </span>
                   </h2>
-                  <p class="text-xs text-slate-400 mt-0.5">Click any card to add or remove it from your active combat deck.</p>
+                  <p class="text-xs text-slate-400 mt-0.5">Browse your collection by rarity, like the binder. Add or remove individual copies.</p>
                 </div>
 
                 <div class="flex items-center gap-2 w-full md:w-auto">
@@ -8705,6 +9242,39 @@ Check your Browserslist config to be sure that your targets are set up correctly
               </div>
             </div>
 
+            <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-5">
+              <div>
+                <h3 class="text-lg font-black text-white">Your Collection</h3>
+                <p class="text-xs text-slate-400">Showing ${selectedCards.length} card types • ${selectedCards.reduce((total, group) => total + group.cards.length, 0)} copies</p>
+              </div>
+              <div class="w-full md:w-64">
+                <input type="text" placeholder="Search card name or type..."
+                  value="${deckSearch}"
+                  oninput="setDeckSearch(this.value)"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-2 mb-5 scrollbar-none">
+              ${rarityOrder.map(rarity => {
+                const isSelected = deckFilter === rarity;
+                const count = groupedCards.size
+                  ? Array.from(groupedCards.values()).filter(group => group.rarity === rarity)
+                    .reduce((total, group) => total + group.cards.length, 0)
+                  : 0;
+                return `
+                  <button onclick="setDeckFilter('${rarity}')"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
+                      isSelected
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                        : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                    }">
+                    ${RARITIES[rarity].name} (${count})
+                  </button>
+                `;
+              }).join('')}
+            </div>
+
             <!-- Cards Selection Grid -->
             ${(allCards || []).length === 0 ? `
               <div class="text-center py-16 bg-slate-900/30 border border-slate-800 rounded-2xl">
@@ -8715,40 +9285,45 @@ Check your Browserslist config to be sure that your targets are set up correctly
                   Rip Free Packs
                 </button>
               </div>
+            ` : selectedCards.length === 0 ? `
+              <div class="text-center py-20 bg-slate-900/30 border border-slate-800 rounded-2xl">
+                <span class="text-4xl block mb-2">${searchLower ? '🔍' : '🎴'}</span>
+                <p class="text-slate-400 font-semibold text-sm">${searchLower ? 'No cards matched your search.' : `No ${RARITIES[deckFilter].name.toLowerCase()} cards yet.`}</p>
+                <p class="text-slate-500 text-xs mt-1">${searchLower ? 'Try another card name or type.' : 'Open booster packs to collect cards of this rarity.'}</p>
+              </div>
             ` : `
-              <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-                ${(allCards || []).map(card => {
-                  const inDeck = playerDeckIds.includes(card.id);
-                  const rData = RARITIES[card.rarity] || RARITIES.GREY;
+              <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                ${selectedCards.map(({ card, cards, rarity, selectedCount, name }) => {
+                  const rData = RARITIES[rarity] || RARITIES.GREY;
+                  const encodedName = encodeURIComponent(name).replace(/'/g, '%27');
                   return `
-                    <div onclick="toggleCardInDeck('${card.id}')"
-                      class="relative rounded-2xl border-2 cursor-pointer transition-all hover:scale-[1.02] p-3 flex flex-col justify-between aspect-[5/7] ${
-                        inDeck 
-                          ? `${rData.borderClass} ${rData.bgClass} shadow-lg ring-2 ring-amber-400` 
-                          : 'border-slate-800 bg-slate-900/70 opacity-60 hover:opacity-100'
-                      }">
-                      
-                      <!-- In Deck Badge -->
-                      <div class="flex items-center justify-between">
+                    <div class="relative rounded-2xl border-2 ${rData.borderClass} ${selectedCount ? rData.bgClass + ' ring-2 ring-amber-400' : 'bg-slate-900/70'} p-3.5 flex flex-col justify-between aspect-[5/7] ${selectedCount ? rData.glow : ''} shadow-lg transition-transform hover:-translate-y-1">
+                      ${cards.length > 1 ? `<span aria-label="${cards.length} copies" title="${cards.length} copies" class="absolute top-2 right-2 z-20 min-w-7 h-7 px-1 rounded-full bg-amber-400 text-slate-950 border-2 border-slate-950 flex items-center justify-center text-xs font-black shadow-lg">×${cards.length}</span>` : ''}
+                      <div class="flex items-center justify-between gap-1">
                         <span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${rData.badge}">
                           ${rData.tier}
                         </span>
-                        <div class="flex items-center gap-1">
                           <span class="text-xs font-black text-amber-300">⚔️ ${card.power}</span>
-                          <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${inDeck ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-500'}">
-                            ${inDeck ? '✓' : '+'}
-                          </span>
-                        </div>
                       </div>
 
                       <div class="text-center my-auto">
-                        ${renderCardArtwork(card, 'w-full h-32 mb-2')}
-                        <h4 class="font-bold text-xs text-white leading-tight truncate px-1">${card.name}</h4>
-                        <span class="text-[9px] text-slate-400 block">${card.type}</span>
+                        ${renderCardArtwork(card, 'w-full h-36 mb-2')}
+                        <h4 class="font-bold text-xs text-white leading-tight truncate px-1">${name}</h4>
+                        <span class="text-[9px] text-slate-300 font-semibold block">${card.type}</span>
                       </div>
 
-                      <div class="bg-black/50 p-1.5 rounded-lg border border-white/5 text-[8px] text-slate-300 text-center font-bold">
-                        ${inDeck ? 'IN COMBAT DECK' : 'CLICK TO ADD'}
+                      <div class="bg-black/50 p-1.5 rounded-lg border border-white/5 text-[9px] text-slate-400 leading-tight">
+                        <p class="italic line-clamp-2">${card.description || ''}</p>
+                        <div class="flex items-center justify-between mt-1 text-[7px] border-t border-white/10 pt-0.5">
+                          <span>${card.serialNumber || 'SN-00'}</span>
+                          <span class="font-bold uppercase text-amber-400">${rarity}</span>
+                        </div>
+                      </div>
+
+                      <div class="mt-2 flex items-center justify-between gap-2">
+                        <button type="button" aria-label="Remove ${name} from deck" onclick="toggleDeckCardGroup('${encodedName}','${rarity}','remove')" ${selectedCount === 0 ? 'disabled' : ''} class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 text-white font-black disabled:opacity-30 disabled:cursor-not-allowed">−</button>
+                        <span class="text-[10px] text-center font-black text-slate-200">${selectedCount} / ${cards.length} in deck</span>
+                        <button type="button" aria-label="Add ${name} to deck" onclick="toggleDeckCardGroup('${encodedName}','${rarity}','add')" ${selectedCount >= cards.length || deckCount >= 30 ? 'disabled' : ''} class="w-8 h-8 rounded-lg bg-amber-400 text-slate-950 font-black disabled:opacity-30 disabled:cursor-not-allowed">+</button>
                       </div>
                     </div>
                   `;
@@ -9323,6 +9898,253 @@ Check your Browserslist config to be sure that your targets are set up correctly
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }
+
+    function escapeOnlineText(value) {
+      return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[character]);
+    }
+
+    // Online Arena View - direct WebRTC with manual offer/answer exchange.
+    window.NorthernGoUI.view('online', {
+      titel: 'Online Arena',
+      ikon: '🌐',
+      render: function() {
+        if (!userLoggedIn) return renderAuthModal();
+        const config = readOnlineConfig();
+        const row = onlineMatch?.row;
+        const state = row?.state;
+        const role = onlineMatch?.role;
+        const own = state?.players?.[role];
+        const opponentRole = role === 'host' ? 'guest' : 'host';
+        const opponent = state?.players?.[opponentRole];
+        const myTurn = Boolean(state && state.status === 'in_progress' && state.turn === role);
+        const statusBox = onlineStatus
+          ? `<div role="status" class="p-3 rounded-xl border border-slate-700 bg-slate-900 text-sm text-slate-200">${escapeOnlineText(onlineStatus)}</div>`
+          : '';
+        const codeField = (label, code, copyHandler) => `
+          <label class="block text-xs text-slate-300">${label}
+            <textarea readonly rows="4" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-[10px] text-emerald-200 break-all">${escapeOnlineText(code)}</textarea>
+            <button type="button" onclick="${copyHandler}" class="mt-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-white">Copy code</button>
+          </label>`;
+
+        const deckCount = playerDeckIds.length;
+        const isDeckValid = deckCount >= 10 && deckCount <= 30;
+
+        return `
+          <main class="max-w-6xl mx-auto p-3 sm:p-6 pb-28 space-y-5">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl backdrop-blur">
+              <div>
+                <span class="text-xs uppercase font-extrabold tracking-widest text-emerald-400">Battle Arena Table</span>
+                <h2 class="text-2xl font-black text-white flex items-center gap-2">
+                  <span>Online Table Clash</span>
+                  <span class="text-xs bg-slate-800 border border-slate-700 px-2.5 py-0.5 rounded-full text-slate-300">Deck Pool: ${deckCount} (10–30 Cards)</span>
+                </h2>
+                <p class="text-xs text-slate-400 mt-0.5">Challenge another player at the same tactical card table—no game server required.</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <label class="text-center px-4 py-2 bg-slate-950 border border-emerald-500/30 rounded-xl">
+                  <span class="text-[10px] text-slate-400 uppercase font-bold block">Player name</span>
+                  <input id="online-player-name" maxlength="24" value="${escapeOnlineText(config.name)}" placeholder="Your name" autocomplete="nickname" class="mt-1 w-40 bg-transparent text-center text-sm text-white focus:outline-none">
+                </label>
+                ${!isDeckValid ? `<button onclick="window.NorthernGoUI.navigate('deck')" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black uppercase rounded-xl transition">Configure Deck</button>` : ''}
+              </div>
+            </div>
+            ${!isDeckValid ? `
+              <div class="p-4 bg-rose-950/40 border border-rose-800/80 rounded-2xl text-rose-200 text-xs flex items-center justify-between gap-3">
+                <span>⚠️ Your deck currently contains <b>${deckCount} cards</b>. You must have between <b>10 and 30 cards</b> to play online.</span>
+                <button onclick="window.NorthernGoUI.navigate('deck')" class="px-3 py-1.5 bg-rose-900 hover:bg-rose-800 rounded-lg font-bold text-white whitespace-nowrap">Edit Deck</button>
+              </div>
+            ` : `
+              <div class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-200 text-xs flex items-center gap-2">
+                <span>🎲</span><span>Your ${deckCount}-card deck is ready. <b>10 cards</b> are dealt at random when both players connect.</span>
+              </div>
+            `}
+            <section class="space-y-4">
+              <div>
+                <h3 class="text-sm font-black text-white uppercase tracking-wider">Choose how to join the table</h3>
+                <p class="text-xs text-slate-400 mt-1">Both players exchange connection codes privately. Direct connections can be blocked by some routers or firewalls.</p>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-amber-500/50 transition-all flex flex-col justify-between shadow-lg space-y-3">
+                  <div>
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-xs font-black uppercase px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-300">Host a table</span>
+                      <span class="text-xs text-slate-400">Offer code</span>
+                    </div>
+                    <p class="text-xs text-slate-400">Create a connection offer and send it to your opponent. Paste their answer code here to connect.</p>
+                  </div>
+                  <button onclick="createPeerOffer()" ${playerDeckIds.length < 10 || playerDeckIds.length > 30 ? 'disabled' : ''} class="w-full py-2.5 rounded-xl bg-amber-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 font-black text-sm">Create offer</button>
+                  ${onlineOfferCode ? codeField('Your offer code', onlineOfferCode, `copyPeerCode(onlineOfferCode)`) : ''}
+                  ${onlineMatch?.role === 'host' && !state ? `
+                    <label class="block text-xs text-slate-300">Opponent’s answer code
+                      <textarea id="online-answer-input" rows="4" placeholder="Paste the answer code here" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-[10px] text-white"></textarea>
+                    </label>
+                    <button onclick="applyPeerAnswer()" class="w-full py-2.5 rounded-xl bg-emerald-400 text-slate-950 font-black text-sm">Connect to opponent</button>
+                  ` : ''}
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-emerald-500/50 transition-all flex flex-col justify-between shadow-lg space-y-3">
+                  <div>
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-xs font-black uppercase px-2 py-0.5 rounded-full border border-emerald-500/40 text-emerald-300">Join a table</span>
+                      <span class="text-xs text-slate-400">Answer code</span>
+                    </div>
+                    <p class="text-xs text-slate-400">Paste your opponent’s offer, create an answer, then send the answer code back to them.</p>
+                  </div>
+                  <label class="block text-xs text-slate-300">Friend’s offer code
+                    <textarea id="online-offer-input" rows="4" placeholder="Paste the offer code here" class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-[10px] text-white"></textarea>
+                  </label>
+                  <button onclick="createPeerAnswer()" ${!isDeckValid ? 'disabled' : ''} class="w-full py-2.5 rounded-xl ${isDeckValid ? 'bg-emerald-400 text-slate-950' : 'bg-slate-800 text-slate-500'} font-black text-sm">Create answer</button>
+                  ${onlineAnswerCode ? codeField('Your answer code', onlineAnswerCode, `copyPeerCode(onlineAnswerCode)`) : ''}
+                </div>
+              </div>
+              <div class="p-3 rounded-xl border border-slate-700 bg-slate-950/60 text-xs text-slate-300">
+                <b class="text-amber-200">Server-free connection:</b> no hosted game service or external connection server is used. Share codes privately; internet connections may fail when router or firewall rules prevent direct access.
+              </div>
+              ${onlineMatch ? `<button onclick="leaveOnlineRoom()" class="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold">Disconnect / start over</button>` : ''}
+            </section>
+            ${statusBox}
+            ${row ? `
+              <section class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                <div>
+                  <h3 class="text-xl font-black text-white">Direct match</h3>
+                  <p class="text-xs text-slate-400">You are ${role === 'host' ? 'the offer creator' : 'the player who answered'}${opponent?.name ? ` • vs ${escapeOnlineText(opponent.name)}` : ''}</p>
+                </div>
+                ${row.status === 'waiting' ? `
+                  <div class="relative min-h-[380px] overflow-hidden rounded-3xl border-4 border-amber-900/60 p-6 flex flex-col items-center justify-center text-center shadow-2xl" style="background:radial-gradient(circle,#0e2a1e 0%,#061912 65%,#030c08 100%);box-shadow:inset 0 0 80px rgba(0,0,0,.8),0 10px 30px rgba(0,0,0,.7)">
+                    <span class="text-5xl mb-4">🎴</span>
+                    <h4 class="text-2xl font-black text-white">Your 1v1 table is ready</h4>
+                    <p class="mt-2 max-w-lg text-sm text-amber-100">Exchange the offer and answer codes above. Once the direct connection opens, both players’ cards will be dealt onto this table.</p>
+                    <div class="mt-6 flex flex-wrap justify-center gap-3">
+                      <span class="rounded-xl border border-rose-400/30 bg-rose-950/50 px-4 py-2 text-sm font-bold text-rose-200">${escapeOnlineText(row.host_name || 'Host')} • waiting</span>
+                      <span class="rounded-xl border border-emerald-400/30 bg-emerald-950/50 px-4 py-2 text-sm font-bold text-emerald-200">${escapeOnlineText(row.guest_name || 'Opponent')} • waiting</span>
+                    </div>
+                  </div>
+                ` : state?.status === 'in_progress' ? `
+                  ${own?.awaitingReplacement ? `
+                    <div class="p-4 bg-amber-500/20 border-2 border-amber-400 rounded-2xl text-amber-200 text-sm flex items-center gap-3 animate-pulse shadow-lg">
+                      <span class="text-2xl">⚡</span><div><b class="block text-white">YOUR ACTIVE CARD HAS FAINTED!</b><span class="text-xs text-amber-300">Choose a card from your hand below to take the active table slot.</span></div>
+                    </div>
+                  ` : ''}
+                  <div class="relative overflow-hidden rounded-3xl border-4 border-amber-900/60 p-3 sm:p-6 shadow-2xl" style="background:radial-gradient(circle,#0e2a1e 0%,#061912 65%,#030c08 100%);box-shadow:inset 0 0 80px rgba(0,0,0,.8),0 10px 30px rgba(0,0,0,.7)">
+                    <div class="absolute inset-x-8 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-emerald-500/20 pointer-events-none"></div>
+                    <div class="relative grid grid-cols-12 gap-2 sm:gap-4 items-stretch min-h-[460px]">
+                      <div class="col-span-2 flex flex-col justify-around items-center gap-3 rounded-2xl border border-white/5 bg-black/30 p-2 sm:p-3">
+                        ${[
+                          { side: opponent, label: `${opponent?.name || 'Opponent'} Dead Pile`, own: false },
+                          { side: own, label: 'Your Dead Pile', own: true }
+                        ].map(({ side, label, own: isOwn }) => `
+                          <div class="w-full text-center">
+                            <span class="block mb-1 text-[8px] sm:text-[9px] font-black uppercase tracking-wider ${isOwn ? 'text-slate-300' : 'text-rose-300'}">${escapeOnlineText(label)}</span>
+                            <div class="mx-auto flex aspect-[3/4] w-full max-w-24 flex-col items-center justify-center rounded-xl border-2 border-dashed ${side?.grave?.length ? (isOwn ? 'border-slate-500/80 bg-slate-900/60' : 'border-rose-500/80 bg-rose-950/30') : 'border-slate-700 bg-slate-900/40'} p-1 relative shadow-lg">
+                              ${side?.grave?.length ? `<span class="text-xl sm:text-2xl">${isOwn ? '🪦' : '💀'}</span><span class="w-full truncate text-center text-[8px] sm:text-[10px] text-slate-200">${escapeOnlineText(side.grave[0].name)}</span><span class="absolute -right-2 -top-2 rounded-full bg-slate-300 px-1.5 text-[9px] font-black text-slate-950">${side.grave.length}</span>` : '<span class="text-[8px] text-slate-600 sm:text-xs">Empty</span>'}
+                            </div>
+                          </div>
+                        `).join('')}
+                      </div>
+                      <div class="col-span-8 flex flex-col justify-center gap-4 py-2 sm:gap-5">
+                        ${[
+                          { side: opponent, own: false },
+                          { side: own, own: true }
+                        ].map(({ side, own: isOwn }) => `
+                          <div class="flex justify-center">
+                            ${side?.active ? `
+                              <div class="relative w-full max-w-2xl rounded-2xl border-2 ${isOwn ? 'border-amber-400 shadow-[0_8px_25px_rgba(234,179,8,.25)]' : 'border-rose-500/80 shadow-[0_8px_25px_rgba(244,63,94,.25)]'} bg-slate-950/95 p-3 sm:p-4">
+                                <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                  <div class="flex flex-wrap items-center gap-1.5">
+                                    <span class="rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${isOwn ? 'border-amber-500/40 bg-amber-500/20 text-amber-200' : 'border-rose-500/40 bg-rose-500/20 text-rose-200'}">${escapeOnlineText(side.name)} ${isOwn ? '(You)' : '(Opponent)'}</span>
+                                    ${side.active.isImmune ? '<span class="animate-pulse rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-bold text-slate-950">🛡️ IMMUNE</span>' : ''}
+                                    ${side.active.stunned ? '<span class="rounded bg-purple-500 px-1.5 py-0.5 text-[9px] font-bold text-white">💫 STUNNED</span>' : ''}
+                                  </div>
+                                  <span class="text-xs font-black ${isOwn ? 'text-amber-300' : 'text-rose-300'}">HP: ${side.active.currentHp} / ${side.active.maxHp}</span>
+                                </div>
+                                <div class="flex items-start gap-3">
+                                  <div class="relative h-24 w-20 shrink-0 overflow-hidden rounded-xl border ${isOwn ? 'border-amber-500/40' : 'border-rose-500/40'} bg-black/70 shadow-inner sm:h-28 sm:w-24">
+                                    ${renderCardArtwork(side.active, 'w-full h-full')}
+                                    <span class="absolute inset-x-0 bottom-0 bg-black/70 text-center text-[8px] font-black uppercase text-amber-300">${escapeOnlineText(side.active.rarity)}</span>
+                                  </div>
+                                  <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center justify-between gap-1">
+                                      <h4 class="text-base font-black leading-tight text-white sm:text-lg">${escapeOnlineText(side.active.name)}</h4>
+                                      <span class="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[9px] uppercase text-slate-300">${escapeOnlineText(side.active.type)}</span>
+                                    </div>
+                                    <div class="mb-2 mt-1.5 h-3 w-full overflow-hidden rounded-full border border-slate-800 bg-slate-900">
+                                      <div class="h-full ${isOwn ? 'bg-amber-500' : 'bg-rose-500'} transition-all" style="width:${Math.max(0, Math.min(100, side.active.currentHp / side.active.maxHp * 100))}%"></div>
+                                    </div>
+                                    ${(side.active.smeggeMultiplier > 1 || side.active.statMultiplier > 1) ? `<div class="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/15 p-1.5 text-[10px] font-black text-amber-300">⚡ ACTIVE BUFF: ${side.active.smeggeMultiplier > 1 ? `Smegge ${side.active.smeggeMultiplier}x ` : ''}${side.active.statMultiplier > 1 ? 'Gov 3x Multiplier' : ''}</div>` : ''}
+                                    <div class="space-y-1.5 rounded-xl border border-white/10 bg-black/60 p-2">
+                                      ${(side.active.attacks || []).map((attack, attackIndex) => {
+                                        const damage = getCalculatedAttackDmg(side.active, attack);
+                                        const multiplier = getAttackMultiplier(side.active, attack);
+                                        const disabled = side.active.disabledAttackId === attack.id;
+                                        const content = `<div class="flex flex-wrap items-center justify-between gap-1 font-bold"><span class="${isOwn ? 'text-amber-200' : 'text-rose-200'}">${escapeOnlineText(attack.name)}${multiplier > 1 ? ` <span class="rounded bg-amber-400 px-1 text-[9px] text-slate-950">⚡ ${multiplier}x</span>` : ''}</span>${damage > 0 ? `<span class="text-xs font-extrabold ${multiplier > 1 ? 'text-amber-300' : 'text-rose-400'}">💥 ${damage} DMG</span>` : ''}</div><p class="mt-0.5 text-[10px] leading-snug text-slate-300">${escapeOnlineText(attack.desc)}</p>${disabled ? `<span class="mt-1 inline-block rounded bg-rose-950 px-1 py-0.5 text-[9px] text-rose-300">🚫 Locked for ${side.active.disabledTurnsLeft} turns</span>` : ''}`;
+                                        return isOwn
+                                          ? `<button onclick="onlineAttack(${attackIndex})" ${!myTurn || side.awaitingReplacement || disabled ? 'disabled' : ''} class="block w-full rounded-xl border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${disabled ? 'border-rose-800 bg-rose-950/40' : 'border-slate-700 bg-gradient-to-r from-slate-900 to-slate-800 hover:border-amber-400'}">${content}</button>`
+                                          : `<div class="border-b border-white/5 pb-1.5 text-[10px] last:border-0 last:pb-0">${content}</div>`;
+                                      }).join('')}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ` : `<div class="flex h-28 w-full max-w-lg flex-col items-center justify-center rounded-2xl border-2 border-dashed ${isOwn ? 'border-amber-400/50 bg-amber-500/5' : 'border-rose-500/30'} text-center"><span class="text-xl">🎴</span><b class="text-xs uppercase ${isOwn ? 'text-amber-300' : 'text-rose-300'}">${isOwn ? 'Your active card is down' : 'Opponent is choosing a card'}</b></div>`}
+                          </div>
+                        `).join('')}
+                        <div class="text-center">
+                          <span class="inline-block rounded-full border px-4 py-1 text-[10px] font-black uppercase tracking-wider shadow-md sm:text-xs ${own?.awaitingReplacement ? 'animate-pulse border-amber-300 bg-amber-400 text-slate-950' : myTurn ? 'border-emerald-600 bg-emerald-950 text-emerald-300' : 'border-rose-800 bg-rose-950 text-rose-300'}">${own?.awaitingReplacement ? '⚠️ Choose your next fighter below' : myTurn ? '⚔️ Your turn — attack or swap' : `⏳ Waiting for ${escapeOnlineText(opponent?.name || 'opponent')}…`}</span>
+                        </div>
+                      </div>
+                      <div class="col-span-2 flex flex-col justify-around items-center gap-3 rounded-2xl border border-white/5 bg-black/30 p-2 sm:p-3">
+                        ${[
+                          { side: opponent, own: false },
+                          { side: own, own: true }
+                        ].map(({ side, own: isOwn }) => `
+                          <div class="w-full text-center">
+                            <span class="mb-1 block text-[8px] font-black uppercase tracking-wider sm:text-[9px] ${isOwn ? 'text-amber-300' : 'text-rose-300'}">${isOwn ? 'Your Draw Deck' : 'Opponent Deck'}</span>
+                            <div class="relative mx-auto flex aspect-[3/4] w-full max-w-24 flex-col items-center justify-center rounded-xl border-2 border-slate-700 bg-gradient-to-br ${isOwn ? 'from-amber-950 to-slate-950' : 'from-rose-950 to-slate-950'} p-1 shadow-2xl">
+                              <span class="text-xl sm:text-2xl">🎴</span><span class="text-center text-[7px] font-black uppercase text-slate-300 sm:text-[9px]">Reserves</span>
+                              <span class="absolute -right-2 -top-2 rounded-full ${isOwn ? 'bg-amber-400' : 'bg-rose-500'} px-1.5 text-[9px] font-black text-slate-950">${side?.deck?.length || 0}</span>
+                            </div>
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>
+                  </div>
+                  ${own?.hand?.length ? `
+                    <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5 shadow-xl">
+                      <div class="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                        <div><h4 class="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white">🎴 Your Hand (${own.hand.length} In Reserve)</h4><p class="text-[11px] text-slate-400">${own.awaitingReplacement ? 'Select a fighter to take the active slot.' : 'Swap with your active fighter at the cost of 1 turn.'}</p></div>
+                        ${!own.awaitingReplacement ? '<span class="self-start rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-300">🔄 Swapping Costs 1 Turn</span>' : ''}
+                      </div>
+                      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        ${own.hand.map((card, cardIndex) => {
+                          const rarity = RARITIES[card.rarity] || RARITIES.GREY;
+                          return `<button onclick="onlineChooseCard(${cardIndex})" ${!myTurn || card.currentHp <= 0 ? 'disabled' : ''} class="flex flex-col justify-between rounded-2xl border-2 p-3 text-left transition-transform hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-40 ${own.awaitingReplacement ? 'animate-pulse border-amber-400 bg-amber-950/20 ring-2 ring-amber-400/50' : 'border-slate-700 bg-slate-950 hover:border-slate-500'}">
+                            <div class="mb-2 flex items-center justify-between"><span class="rounded border px-1.5 py-0.5 text-[8px] font-black uppercase ${rarity.badge}">${escapeOnlineText(card.rarity)}</span><span class="text-[10px] font-bold text-amber-400">⚔️ ${card.power}</span></div>
+                            <div class="my-1 flex items-center gap-3">${renderCardArtwork(card, 'w-14 h-14')}<div class="min-w-0 flex-1"><span class="block truncate text-xs font-bold text-white">${escapeOnlineText(card.name)}</span><span class="text-[10px] font-bold text-emerald-400">HP: ${card.currentHp}/${card.maxHp}</span></div></div>
+                            <div class="mt-2 border-t border-slate-800 pt-2"><span class="block w-full rounded-xl ${own.awaitingReplacement ? 'bg-amber-400 font-black text-slate-950' : 'bg-slate-800 text-slate-200'} py-1.5 text-center text-[10px] uppercase tracking-wider">${own.awaitingReplacement ? 'Play This Card ➔' : 'Swap to Table (1 Turn)'}</span></div>
+                          </button>`;
+                        }).join('')}
+                      </div>
+                    </div>
+                  ` : ''}
+                  <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <h4 class="mb-2 flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-400"><span>📜 Live Table Combat Log</span><span class="text-[10px] font-normal text-slate-500">Recent rounds</span></h4>
+                    <div class="max-h-40 space-y-1.5 overflow-y-auto font-mono text-xs">${(state.history || []).map(entry => `<div class="rounded-xl border border-slate-800/70 bg-slate-950/70 p-2 text-slate-300">${escapeOnlineText(entry)}</div>`).join('')}</div>
+                  </div>
+                ` : `
+                  <div class="relative min-h-[320px] overflow-hidden rounded-3xl border-4 border-amber-900/60 p-6 flex flex-col items-center justify-center text-center shadow-2xl" style="background:radial-gradient(circle,#0e2a1e 0%,#061912 65%,#030c08 100%)">
+                    <span class="text-5xl">${state?.winner === role ? '🏆' : '⚔️'}</span>
+                    <h4 class="mt-3 text-3xl font-black text-white">${state?.winner === role ? 'TABLE VICTORY!' : 'Match complete'}</h4>
+                    <p class="mt-2 text-sm text-slate-200">${escapeOnlineText(state?.history?.[0] || 'The match has ended.')}</p>
+                  </div>
+                `}
+                ${state?.history?.length ? `<div class="max-h-40 overflow-y-auto rounded-xl bg-black/30 p-3 text-xs text-slate-300 space-y-1">${state.history.slice(0, 8).map(entry => `<p>${escapeOnlineText(entry)}</p>`).join('')}</div>` : ''}
+              </section>
+            ` : ''}
+          </main>
+        `;
+      }
+    });
 
     // 5. Game Code View - Standalone Exact Game Source Code
     window.NorthernGoUI.view('source', {
