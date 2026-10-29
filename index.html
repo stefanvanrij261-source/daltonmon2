@@ -577,6 +577,21 @@ Check your Browserslist config to be sure that your targets are set up correctly
     }
     .glow-gold { animation: pulse-gold 2s infinite ease-in-out; }
     .glow-black { animation: pulse-black 1.8s infinite ease-in-out; }
+    .rainbow-card-bg {
+      background: linear-gradient(135deg, rgba(239, 68, 68, .28), rgba(234, 179, 8, .24), rgba(34, 197, 94, .24), rgba(59, 130, 246, .28), rgba(168, 85, 247, .3));
+      background-size: 250% 250%;
+      animation: rainbow-shift 5s ease infinite;
+    }
+    .rainbow-card-badge {
+      background: linear-gradient(90deg, rgba(239, 68, 68, .35), rgba(234, 179, 8, .35), rgba(34, 197, 94, .35), rgba(59, 130, 246, .35), rgba(168, 85, 247, .4));
+      color: #fff;
+      border-color: rgba(255, 255, 255, .6);
+    }
+    .glow-rainbow { box-shadow: 0 0 25px rgba(168, 85, 247, .5); }
+    @keyframes rainbow-shift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
   </style>
 <script>(function () {
   if (window.__ngGeoBridge) return;
@@ -2089,7 +2104,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
                 </p>
               </div>
 
-              <div class="flex items-center gap-2 w-full sm:w-auto">
+              <div class="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
                 <button id="copy-code-btn" onclick="copyGameSourceCode()" class="flex-1 sm:flex-none px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition active:scale-95 shadow-lg">
                   <span>📋</span>
                   <span>Copy Entire Code</span>
@@ -4352,6 +4367,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
     let isOpeningPack = false;
     let currentPack = [];
     let openedPackCards = [];
+    let iconRevealStage = 0;
     let allCards = [];
     let binderFilter = 'GREY';
     let binderSearch = '';
@@ -4366,7 +4382,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
       blue: 0,
       purple: 0,
       gold: 0,
-      black: 0
+      black: 0,
+      rainbow: 0,
+      icon: 0
     };
 
     const PACK_PRICE = 100;
@@ -4375,6 +4393,20 @@ Check your Browserslist config to be sure that your targets are set up correctly
     // AI Battle State
     let activeBattle = null;
     let selectedDifficulty = 'medium';
+    let selectedBattleMode = '1v1';
+    let selectedOnlineMode = '1v1';
+
+    function setBattleMode(mode) {
+      if (!['1v1', '2v2'].includes(mode)) return;
+      selectedBattleMode = mode;
+      window.NorthernGoUI.refresh();
+    }
+
+    function setOnlineBattleMode(mode) {
+      if (!['1v1', '2v2'].includes(mode)) return;
+      selectedOnlineMode = mode;
+      window.NorthernGoUI.refresh();
+    }
 
     const AI_DIFFICULTIES = {
       easy: {
@@ -4408,6 +4440,14 @@ Check your Browserslist config to be sure that your targets are set up correctly
         avgPower: 450,
         coinReward: 600,
         description: 'Endgame anomaly with immense power and secret black relics.'
+      },
+      rainbow: {
+        name: 'Rainbow Sovereign',
+        badge: 'rainbow-card-badge',
+        cardPool: ['RAINBOW'],
+        avgPower: 1000,
+        coinReward: 2000,
+        description: 'An ultimate challenger whose entire deck is made of 10x Rainbow cards.'
       }
     };
 
@@ -4466,6 +4506,24 @@ Check your Browserslist config to be sure that your targets are set up correctly
         bgClass: 'bg-black text-rose-100',
         badge: 'bg-fuchsia-950 text-fuchsia-300 border-fuchsia-500',
         glow: 'glow-black'
+      },
+      RAINBOW: {
+        name: 'Rainbow',
+        tier: 'Ultra Secret',
+        color: '#fff',
+        borderClass: 'border-white',
+        bgClass: 'rainbow-card-bg text-white',
+        badge: 'rainbow-card-badge',
+        glow: 'glow-rainbow'
+      },
+      ICON: {
+        name: 'Icons',
+        tier: 'ICON',
+        color: '#fff',
+        borderClass: 'border-slate-300',
+        bgClass: 'bg-white text-slate-950',
+        badge: 'bg-slate-100 text-slate-950 border-slate-300',
+        glow: 'shadow-[0_0_24px_rgba(255,255,255,0.25)]'
       }
     };
 
@@ -4475,7 +4533,8 @@ Check your Browserslist config to be sure that your targets are set up correctly
       BLUE: 2.5,
       PURPLE: 3,
       GOLD: 4,
-      BLACK: 6
+      BLACK: 6,
+      RAINBOW: 10
     };
 
     const BASE_CARD_TEMPLATES = [
@@ -4621,11 +4680,175 @@ Check your Browserslist config to be sure that your targets are set up correctly
           { id: 'monsieur_hazelaar', name: 'Monsieur Hazelaaar', type: 'damage', dmg: 60, desc: 'best attack there is (damage 60)' },
           { id: 'ca_va', name: 'Ça va', type: 'gamble_full_heal', dmg: 0, desc: 'you found him in the wild 50% of a full hp restore' }
         ]
+      },
+      {
+        name: 'Le pair',
+        baseHp: 35,
+        type: 'devil',
+        desc: 'Pencil case throw: a hidden needle catches the opponent off guard (damage 25).',
+        attacks: [
+          { id: 'le_pair_pencil_case', name: 'Pencil case throw', type: 'damage', dmg: 25, desc: 'A hidden needle catches the opponent off guard (damage 25).' }
+        ]
+      },
+      {
+        name: 'Thape',
+        baseHp: 40,
+        type: 'teacher',
+        desc: 'Pythagorean theorem: a dull geometry lesson (damage 20). Misplaced joke: makes the opponent switch their active card.',
+        attacks: [
+          { id: 'thape_pythagorean_theorem', name: 'Pythagorean theorem', type: 'damage', dmg: 20, desc: 'A dull geometry lesson (damage 20).' },
+          { id: 'thape_misplaced_joke', name: 'Misplaced joke', type: 'force_switch', dmg: 0, desc: 'Makes the opponent switch their active card.' }
+        ]
+      },
+      {
+        name: 'Nienkemper',
+        baseHp: 30,
+        type: 'devil',
+        desc: 'Straight death: a decisive strike (damage 60).',
+        attacks: [
+          { id: 'nienkemper_straight_death', name: 'Straight death', type: 'damage', dmg: 60, desc: 'A decisive strike (damage 60).' }
+        ]
+      },
+      {
+        name: 'Aksu',
+        baseHp: 80,
+        type: 'neutral',
+        desc: 'Wheel of punishment: redirects the opponent’s next attack back at them (2-turn cooldown). Aura: overwhelming presence (damage 40).',
+        attacks: [
+          { id: 'aksu_wheel_of_punishment', name: 'Wheel of punishment', type: 'redirect_attack', cooldown: 2, dmg: 0, desc: 'Redirects the opponent’s next attack back at them (2-turn cooldown).' },
+          { id: 'aksu_aura', name: 'Aura', type: 'damage', dmg: 40, desc: 'Overwhelming presence (damage 40).' }
+        ]
+      },
+      {
+        name: 'Houda',
+        baseHp: 70,
+        type: 'marrocan',
+        desc: 'One for all, all for one: takes Hamdi from the opponent and adds him to your draw pile. Math olympiad: (damage 30).',
+        attacks: [
+          { id: 'houda_one_for_all', name: 'One for all, all for one', type: 'steal_hamdi', dmg: 0, desc: 'If the opponent is Hamdi, take that card and add it to your draw pile.' },
+          { id: 'houda_math_olympiad', name: 'Math olympiad', type: 'damage', dmg: 30, desc: 'You were entered into the contest (damage 30).' }
+        ]
+      },
+      {
+        name: 'Heteren',
+        baseHp: 50,
+        type: 'teacher',
+        desc: 'Short temper: a sudden outburst (damage 40).',
+        attacks: [
+          { id: 'heteren_short_temper', name: 'Short temper', type: 'damage', dmg: 40, desc: 'A sudden outburst (damage 40).' }
+        ]
+      },
+      {
+        name: 'Hobers',
+        baseHp: 25,
+        type: 'devil',
+        desc: 'Questionable style of clothing: an unforgettable outfit distracts the opponent (damage 60).',
+        attacks: [
+          { id: 'hobers_questionable_style', name: 'Questionable style of clothing', type: 'damage', dmg: 60, desc: 'An unforgettable outfit distracts the opponent (damage 60).' }
+        ]
+      },
+      {
+        name: 'Kranenbrug',
+        baseHp: 40,
+        type: 'devil',
+        desc: 'Poyraz: summons Poyraz and sacrifices this card. Kranenburgs huis: (damage 25).',
+        attacks: [
+          { id: 'kranenbrug_poyraz', name: 'Poyraz', type: 'suicide', dmg: 0, desc: 'Summons Poyraz and sacrifices this card.' },
+          { id: 'kranenbrug_house', name: 'Kranenburgs huis', type: 'damage', dmg: 25, desc: 'Pulls the opponent into the house (damage 25).' }
+        ]
+      },
+      {
+        name: 'Heerkens',
+        baseHp: 60,
+        type: 'devil',
+        desc: 'Evil witch: if Kranenbrug is on the field, all field cards are knocked out; otherwise deals 30 damage.',
+        attacks: [
+          { id: 'heerkens_evil_witch', name: 'Evil witch', type: 'conditional_nuke', dmg: 30, desc: 'If Kranenbrug is on the field, knock out everyone; otherwise deal 30 damage.' }
+        ]
+      },
+      {
+        name: 'Stigter',
+        baseHp: 40,
+        type: 'teacher',
+        desc: 'Eine klein Weihnachtsbaum: a surprise holiday hit (damage 40).',
+        attacks: [
+          { id: 'stigter_weihnachtsbaum', name: 'Eine klein Weihnachtsbaum', type: 'damage', dmg: 40, desc: 'A surprise holiday hit (damage 40).' }
+        ]
       }
     ];
 
+    const ICON_CARD_TEMPLATES = [
+      {
+        name: 'Leeuwis',
+        baseHp: 200,
+        type: 'NPC',
+        image: 'le%20afbeeldingen/leeuwis.png',
+        desc: 'Judge: hits his hammer down hard (damage 100). Wrong cake: hits for 200 to either you or the opponent.',
+        attacks: [
+          { id: 'icon_leeuwis_judge', name: 'Judge', type: 'damage', dmg: 100, desc: 'Hits his hammer down hard (damage 100).' },
+          { id: 'icon_leeuwis_wrong_cake', name: 'Wrong cake', type: 'random_target_damage', dmg: 200, desc: 'Hits for 200 damage to either you or the opponent.' }
+        ]
+      },
+      {
+        name: 'Vd Griend',
+        baseHp: 240,
+        type: 'legend',
+        image: 'le%20afbeeldingen/vd%20griend.png',
+        desc: 'Breaking bad: explains every joke in the series (damage 120).',
+        attacks: [
+          { id: 'icon_vd_griend_breaking_bad', name: 'Breaking bad', type: 'damage', dmg: 120, desc: 'Explains every joke in the series (damage 120).' }
+        ]
+      },
+      {
+        name: 'Tasma',
+        baseHp: 150,
+        type: 'NPC',
+        image: 'le%20afbeeldingen/tasma.jpg',
+        desc: 'Desmos BMW: puts you to sleep with his math-nerd type shi (damage 90).',
+        attacks: [
+          { id: 'icon_tasma_desmos_bmw', name: 'Desmos BMW', type: 'damage', dmg: 90, desc: 'Puts you to sleep with his math-nerd type shi (damage 90).' }
+        ]
+      },
+      {
+        name: 'Vos',
+        baseHp: 300,
+        type: 'legend',
+        image: 'le%20afbeeldingen/Vos.png',
+        desc: 'Body slam: slams into you like prime Dhiele (damage 130). Ai video: shows a picture of himself being skinny and heals himself 50 HP.',
+        attacks: [
+          { id: 'icon_vos_body_slam', name: 'Body slam', type: 'damage', dmg: 130, desc: 'Slams into you like prime Dhiele (damage 130).' },
+          { id: 'icon_vos_ai_video', name: 'Ai video', type: 'self_heal', heal: 50, desc: 'Shows you a picture of himself being skinny: heals himself 50 HP.' }
+        ]
+      },
+      {
+        name: 'Smit',
+        baseHp: 140,
+        type: 'devil',
+        desc: 'Instant punishment: always attacks first and deals 180 damage.',
+        attacks: [
+          { id: 'icon_smit_instant_punishment', name: 'Instant punishment', type: 'priority_damage', dmg: 180, priority: true, desc: 'Always attacks first (damage 180).' }
+        ]
+      }
+    ];
+
+    function createIconCard() {
+      const template = ICON_CARD_TEMPLATES[Math.floor(Math.random() * ICON_CARD_TEMPLATES.length)];
+      return {
+        id: 'icon-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
+        name: template.name,
+        type: template.type,
+        baseName: template.name,
+        power: template.baseHp,
+        baseHp: template.baseHp,
+        description: template.desc,
+        rarity: 'ICON',
+        serialNumber: 'ICON-' + Math.floor(100000 + Math.random() * 900000),
+        dateAcquired: new Date().toISOString()
+      };
+    }
+
     // Calculate probabilities
-    // Cards 1-4 standard: Grey 50%, Green 20%, Blue 15%, Purple 10%, Gold 4%, Black 1%
+    // Cards 1-4 standard: Grey 50%, Green 20%, Blue 15%, Purple 10%, Gold 4%, Black 0.99%, Rainbow 0.01%
     function rollStandardCard() {
       const rand = Math.random() * 100;
       if (rand &lt; 50) return getCardOfRarity('GREY');
@@ -4724,7 +4947,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
     }
 
     function recalculateStats() {
-      statsCollection = { grey: 0, green: 0, blue: 0, purple: 0, gold: 0, black: 0 };
+      statsCollection = { grey: 0, green: 0, blue: 0, purple: 0, gold: 0, black: 0, rainbow: 0, icon: 0 };
       (allCards || []).forEach(c =&gt; {
         const r = (c?.rarity || '').toLowerCase();
         if (statsCollection[r] !== undefined) {
@@ -4812,6 +5035,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
     // Single Card Render Helper
     function renderCardComponent(card, isRevealed, index) {
+      if (card.rarity === 'ICON') return renderIconPackCard(card);
       const rarityData = RARITIES[card.rarity] || RARITIES.GREY;
       const isShiftedSlot = index === 4;
 
@@ -4873,6 +5097,28 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
           &lt;/div&gt;
         &lt;/div&gt;
+      `;
+    }
+
+    function renderIconPackCard(card) {
+      const template = ICON_CARD_TEMPLATES.find(icon => icon.name === card.name);
+      const revealSteps = ['Reveal type', 'Reveal HP', 'Reveal attacks', 'Reveal picture'];
+      return `
+        <section class="mx-auto w-full max-w-xl rounded-3xl border-2 border-slate-300 bg-white p-5 text-slate-950 shadow-[0_0_40px_rgba(255,255,255,0.35)] sm:p-8">
+          <div class="mb-5 flex items-center justify-between gap-3">
+            <span class="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-black tracking-[0.25em]">ICON</span>
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-600">One collectible icon card · added to your binder</span>
+          </div>
+          <div class="min-h-64 space-y-5 text-center">
+            ${iconRevealStage >= 1 ? `<div class="animate-pulse"><span class="block text-[10px] font-bold uppercase tracking-[0.3em] text-slate-600">Type revealed</span><span class="mt-1 block text-3xl font-black">${card.type}</span></div>` : '<div class="py-10 text-lg font-bold tracking-widest text-slate-600">A new icon is waiting...</div>'}
+            ${iconRevealStage >= 2 ? `<div><span class="block text-[10px] font-bold uppercase tracking-[0.3em] text-slate-600">HP revealed</span><span class="mt-1 block text-4xl font-black">${card.baseHp} HP</span></div>` : ''}
+            ${iconRevealStage >= 3 ? `<div class="rounded-2xl border border-slate-300 bg-slate-50 p-4 text-left"><span class="mb-3 block text-center text-[10px] font-bold uppercase tracking-[0.3em] text-slate-600">Attacks revealed</span>${(template?.attacks || []).map(attack => `<div class="mb-3 last:mb-0"><h4 class="font-black">${attack.name}${attack.dmg ? ` · ${attack.dmg} damage` : attack.heal ? ` · heals ${attack.heal} HP` : ''}</h4><p class="mt-1 text-sm leading-relaxed text-slate-700">${attack.desc}</p></div>`).join('')}</div>` : ''}
+            ${iconRevealStage >= 4 ? `<div class="animate-pulse"><h3 class="mb-3 text-3xl font-black">${card.name}</h3><div class="mx-auto max-w-sm overflow-hidden rounded-2xl border border-slate-300">${renderCardArtwork(card, 'w-full h-64')}</div></div>` : ''}
+          </div>
+          <div class="mt-6 text-center">
+            ${iconRevealStage < 4 ? `<button type="button" onclick="advanceIconReveal()" class="rounded-xl bg-white px-6 py-3 text-sm font-black uppercase tracking-wider text-slate-950 transition hover:bg-slate-200">${revealSteps[iconRevealStage]}</button>` : '<span class="text-sm font-bold uppercase tracking-wider text-emerald-300">Reveal complete</span>'}
+          </div>
+        </section>
       `;
     }
   &lt;/script&gt;
@@ -4982,26 +5228,34 @@ Check your Browserslist config to be sure that your targets are set up correctly
       }
 
       isOpeningPack = true;
-      openedPackCards = [false, false, false, false, false];
+      iconRevealStage = 0;
+      openedPackCards = [];
 
       if (!isFree) {
         userCoins -= PACK_PRICE;
       }
 
-      // Generate 5 cards
-      // Cards 1-4 standard, Card 5 shifted odds
-      const c1 = rollStandardCard();
-      const c2 = rollStandardCard();
-      const c3 = rollStandardCard();
-      const c4 = rollStandardCard();
-      const c5 = rollShiftedCard(); // Shifted odds!
-      
-      currentPack = [c1, c2, c3, c4, c5];
+      if (Math.random() < 0.01) {
+        currentPack = [createIconCard()];
+      } else {
+        const c1 = rollStandardCard();
+        const c2 = rollStandardCard();
+        const c3 = rollStandardCard();
+        const c4 = rollStandardCard();
+        const c5 = rollShiftedCard();
+        currentPack = [c1, c2, c3, c4, c5];
+      }
       
       // Persist immediately in database
       await recordPackOpening(currentPack);
 
       isOpeningPack = false;
+      window.NorthernGoUI.refresh();
+    }
+
+    function advanceIconReveal() {
+      if (!currentPack[0] || currentPack[0].rarity !== 'ICON') return;
+      iconRevealStage = Math.min(4, iconRevealStage + 1);
       window.NorthernGoUI.refresh();
     }
 
@@ -5132,6 +5386,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
       // 3 cards drawn to hand
       const playerHand = selectedTenCombatCards.splice(0, 3);
+      const playerPartnerCard = selectedBattleMode === '2v2' ? playerHand.shift() || selectedTenCombatCards.shift() || null : null;
       // The remaining 7 cards form the draw pile (right side)
       const playerDeck = selectedTenCombatCards;
 
@@ -5265,7 +5520,18 @@ Check your Browserslist config to be sure that your targets are set up correctly
         return amount;
       };
 
-      if (atk.id === 'useless') {
+      if (atk.id === 'icon_leeuwis_wrong_cake') {
+        if (Math.random() < 0.5) {
+          attacker.currentHp = Math.max(0, attacker.currentHp - atk.dmg);
+          activeBattle.roundHistory.unshift(`🍰 ${actorLabel} used [Wrong cake]: the cake hit them for ${atk.dmg} DMG!`);
+        } else {
+          applyDamageToDefender(atk.dmg);
+          activeBattle.roundHistory.unshift(`🍰 ${actorLabel} used [Wrong cake]: the cake hit ${targetLabel} for ${atk.dmg} DMG!`);
+        }
+      } else if (atk.id === 'icon_vos_ai_video') {
+        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + atk.heal);
+        activeBattle.roundHistory.unshift(`📹 ${actorLabel} used [Ai video] and healed ${atk.heal} HP!`);
+      } else if (atk.id === 'useless') {
         attacker.currentHp = 0;
         activeBattle.roundHistory.unshift(`💀 ${actorLabel} used [useless] and killed himself!`);
       } else if (atk.id === 'smegge') {
@@ -5379,6 +5645,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
     async function playerExecuteAttack(attackIndex) {
       if (!activeBattle || activeBattle.status === 'completed' || activeBattle.isAiTurn || activeBattle.awaitingReplacement) return;
       if (!activeBattle.activePlayerCard || !activeBattle.activeAiCard) return;
+      if (activeBattle.gameMode === '2v2') {
+        await playerExecuteTwoVsTwoTurn();
+        return;
+      }
 
       const pCard = activeBattle.activePlayerCard;
       const aiCard = activeBattle.activeAiCard;
@@ -5420,6 +5690,292 @@ Check your Browserslist config to be sure that your targets are set up correctly
       await executeAiTurn();
     }
 
+    function readTwoVsTwoActions(prefix, attackers, defenders) {
+      const actions = [null, null];
+      for (let slot = 0; slot < attackers.length; slot++) {
+        const attacker = attackers[slot];
+        if (!attacker || attacker.currentHp <= 0) continue;
+        const attackInput = document.getElementById(`${prefix}-attack-${slot}`);
+        const targetInput = document.getElementById(`${prefix}-target-${slot}`);
+        if (!attackInput || !targetInput) return null;
+        const attackIndex = Number(attackInput.value);
+        const targetSlot = Number(targetInput.value);
+        const target = defenders[targetSlot];
+        if (getTeamAttacks(attacker, attackIndex) == null) {
+          if (attacker.attacks.every(attack => attacker.disabledAttackId === attack.id)) continue;
+          return null;
+        }
+        if (!target || target.currentHp <= 0) return null;
+        actions[slot] = { attackIndex, targetSlot };
+      }
+      return actions.some(Boolean) ? actions : null;
+    }
+
+    async function playerExecuteTwoVsTwoTurn() {
+      if (!activeBattle || activeBattle.gameMode !== '2v2' || activeBattle.status === 'completed' ||
+          activeBattle.isAiTurn || activeBattle.awaitingReplacement) return;
+      const actions = readTwoVsTwoActions(
+        'ai-battle',
+        [activeBattle.activePlayerCard, activeBattle.playerPartnerCard],
+        [activeBattle.activeAiCard, activeBattle.aiPartnerCard]
+      );
+      if (!actions) return;
+      await executeTwoVsTwoPlayerTurn(actions);
+    }
+
+    function getTeamAttacks(card, requestedIndex) {
+      if (!card || card.currentHp <= 0 || !card.attacks.length) return null;
+      const attack = card.attacks[requestedIndex];
+      return attack && card.disabledAttackId !== attack.id && !isAttackCoolingDown(card, attack) ? requestedIndex : null;
+    }
+
+    function isAttackCoolingDown(card, attack) {
+      return attack.id === 'aksu_wheel_of_punishment' && (card.wheelCooldown || 0) > 0;
+    }
+
+    function renderTwoVsTwoControls(attackers, defenders, prefix, enabled, handler) {
+      const livingTargets = defenders
+        .map((card, slot) => card && card.currentHp > 0 ? { card, slot } : null)
+        .filter(Boolean);
+      if (!livingTargets.length) return '';
+      const attackerControls = attackers.map((card, slot) => {
+        if (!card || card.currentHp <= 0) return '';
+        const availableAttacks = card.attacks.filter(attack => card.disabledAttackId !== attack.id && !isAttackCoolingDown(card, attack));
+        return `
+          <div class="rounded-xl border border-slate-700 bg-slate-950/80 p-3">
+            <h4 class="mb-2 text-xs font-black text-amber-200">${slot === 0 ? 'Active fighter' : 'Partner'}: ${escapeOnlineText(card.name)} · choose its move and target</h4>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Move
+                <select id="${prefix}-attack-${slot}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-xs text-white" ${!enabled || !availableAttacks.length ? 'disabled' : ''}>
+                  ${card.attacks.map((attack, index) => {
+                    const coolingDown = isAttackCoolingDown(card, attack);
+                    return `<option value="${index}" ${card.disabledAttackId === attack.id || coolingDown ? 'disabled' : ''}>${escapeOnlineText(attack.name)}${attack.dmg > 0 ? ` · ${getCalculatedAttackDmg(card, attack)} DMG` : ''}${card.disabledAttackId === attack.id ? ' · locked' : coolingDown ? ` · cooldown ${card.wheelCooldown}` : ''}</option>`;
+                  }).join('')}
+                </select>
+              </label>
+              <label class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Target
+                <select id="${prefix}-target-${slot}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-xs text-white" ${!enabled ? 'disabled' : ''}>
+                  ${livingTargets.map(({ card: target, slot: targetSlot }) => `<option value="${targetSlot}">${targetSlot === 0 ? 'Active' : 'Partner'}: ${escapeOnlineText(target.name)} · ${target.currentHp}/${target.maxHp} HP</option>`).join('')}
+                </select>
+              </label>
+            </div>
+          </div>
+        `;
+      }).join('');
+      if (!attackerControls) return '';
+      const cannotAttack = attackers.every(card =>
+        !card || card.currentHp <= 0 || card.attacks.every(attack => card.disabledAttackId === attack.id || isAttackCoolingDown(card, attack))
+      );
+      return `
+        <div class="col-span-full mx-auto mt-3 w-full max-w-2xl space-y-2 rounded-2xl border border-amber-500/30 bg-amber-950/20 p-3">
+          <h4 class="text-xs font-black uppercase tracking-wider text-amber-300">Choose both attacks</h4>
+          ${attackerControls}
+          <button onclick="${handler}()" ${!enabled || cannotAttack ? 'disabled' : ''} class="w-full rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40">Attack with selected moves</button>
+        </div>
+      `;
+    }
+
+    function renderCompactTeamCard(card, label, isOwn) {
+      if (!card) {
+        return `<div class="flex min-h-40 items-center justify-center rounded-2xl border-2 border-dashed ${isOwn ? 'border-amber-500/40 text-amber-300/60' : 'border-rose-500/40 text-rose-300/60'} bg-slate-950/70 text-xs font-bold">${label} slot empty</div>`;
+      }
+      const palette = isOwn
+        ? { border: 'border-amber-500/70', label: 'border-amber-500/40 bg-amber-500/15 text-amber-200', hp: 'text-amber-300', frame: 'border-amber-500/40', bar: 'bg-amber-500' }
+        : { border: 'border-rose-500/70', label: 'border-rose-500/40 bg-rose-500/15 text-rose-200', hp: 'text-rose-300', frame: 'border-rose-500/40', bar: 'bg-rose-500' };
+      return `
+        <article class="min-w-0 rounded-2xl border-2 ${palette.border} bg-slate-950/95 p-3 shadow-lg">
+          <header class="mb-2 flex flex-wrap items-center justify-between gap-1">
+            <span class="rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${palette.label}">${label}</span>
+            <span class="text-[10px] font-black ${palette.hp}">${card.currentHp} / ${card.maxHp} HP</span>
+          </header>
+          <div class="flex items-center gap-2">
+            <div class="relative h-16 w-14 shrink-0 overflow-hidden rounded-lg border ${palette.frame} bg-black/70">
+              ${renderCardArtwork(card, 'h-full w-full')}
+              <span class="absolute inset-x-0 bottom-0 bg-black/70 text-center text-[7px] font-black uppercase text-amber-300">${escapeOnlineText(card.rarity)}</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <h4 class="truncate text-sm font-black text-white">${escapeOnlineText(card.name)}</h4>
+              <span class="text-[9px] uppercase text-slate-400">${escapeOnlineText(card.type)}</span>
+              <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-800">
+                <div class="h-full ${palette.bar}" style="width:${Math.max(0, Math.min(100, card.currentHp / card.maxHp * 100))}%"></div>
+              </div>
+            </div>
+          </div>
+          ${(card.isImmune || card.stunned) ? `<div class="mt-2 flex gap-1">${card.isImmune ? '<span class="rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-bold text-slate-950">🛡️ IMMUNE</span>' : ''}${card.stunned ? '<span class="rounded bg-purple-500 px-1.5 py-0.5 text-[9px] font-bold text-white">💫 STUNNED</span>' : ''}</div>` : ''}
+          <div class="mt-2 space-y-1 rounded-xl border border-white/10 bg-black/50 p-2">
+            ${card.attacks.map(attack => {
+              const damage = getCalculatedAttackDmg(card, attack);
+              const disabled = card.disabledAttackId === attack.id;
+              return `<div class="border-b border-white/5 pb-1 text-[10px] last:border-0 last:pb-0 ${disabled ? 'opacity-50' : ''}"><div class="flex justify-between gap-1 font-bold text-slate-200"><span class="truncate">${escapeOnlineText(attack.name)}</span>${damage > 0 ? `<span class="shrink-0 text-rose-300">${damage} DMG</span>` : ''}</div>${disabled ? `<span class="text-[8px] text-rose-300">Locked ${card.disabledTurnsLeft} turns</span>` : ''}</div>`;
+            }).join('')}
+          </div>
+        </article>
+      `;
+    }
+
+    function renderCompactTeamCard(card, label, isOwn) {
+      if (!card) {
+        return `<div class="flex min-h-40 items-center justify-center rounded-2xl border-2 border-dashed ${isOwn ? 'border-amber-500/40 text-amber-300/60' : 'border-rose-500/40 text-rose-300/60'} bg-slate-950/70 text-xs font-bold">${label} slot empty</div>`;
+      }
+      const palette = isOwn
+        ? { border: 'border-amber-500/70', label: 'border-amber-500/40 bg-amber-500/15 text-amber-200', hp: 'text-amber-300', frame: 'border-amber-500/40', bar: 'bg-amber-500' }
+        : { border: 'border-rose-500/70', label: 'border-rose-500/40 bg-rose-500/15 text-rose-200', hp: 'text-rose-300', frame: 'border-rose-500/40', bar: 'bg-rose-500' };
+      return `
+        <article class="min-w-0 rounded-2xl border-2 ${palette.border} bg-slate-950/95 p-3 shadow-lg">
+          <header class="mb-2 flex flex-wrap items-center justify-between gap-1">
+            <span class="rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${palette.label}">${label}</span>
+            <span class="text-[10px] font-black ${palette.hp}">${card.currentHp} / ${card.maxHp} HP</span>
+          </header>
+          <div class="flex items-center gap-2">
+            <div class="relative h-16 w-14 shrink-0 overflow-hidden rounded-lg border ${palette.frame} bg-black/70">
+              ${renderCardArtwork(card, 'h-full w-full')}
+              <span class="absolute inset-x-0 bottom-0 bg-black/70 text-center text-[7px] font-black uppercase text-amber-300">${escapeOnlineText(card.rarity)}</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <h4 class="truncate text-sm font-black text-white">${escapeOnlineText(card.name)}</h4>
+              <span class="text-[9px] uppercase text-slate-400">${escapeOnlineText(card.type)}</span>
+              <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-800">
+                <div class="h-full ${palette.bar}" style="width:${Math.max(0, Math.min(100, card.currentHp / card.maxHp * 100))}%"></div>
+              </div>
+            </div>
+          </div>
+          ${(card.isImmune || card.stunned) ? `<div class="mt-2 flex gap-1">${card.isImmune ? '<span class="rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-bold text-slate-950">🛡️ IMMUNE</span>' : ''}${card.stunned ? '<span class="rounded bg-purple-500 px-1.5 py-0.5 text-[9px] font-bold text-white">💫 STUNNED</span>' : ''}</div>` : ''}
+          <div class="mt-2 space-y-1 rounded-xl border border-white/10 bg-black/50 p-2">
+            ${card.attacks.map(attack => {
+              const damage = getCalculatedAttackDmg(card, attack);
+              const disabled = card.disabledAttackId === attack.id;
+              return `<div class="border-b border-white/5 pb-1 text-[10px] last:border-0 last:pb-0 ${disabled ? 'opacity-50' : ''}"><div class="flex justify-between gap-1 font-bold text-slate-200"><span class="truncate">${escapeOnlineText(attack.name)}</span>${damage > 0 ? `<span class="shrink-0 text-rose-300">${damage} DMG</span>` : ''}</div>${disabled ? `<span class="text-[8px] text-rose-300">Locked ${card.disabledTurnsLeft} turns</span>` : ''}</div>`;
+            }).join('')}
+          </div>
+        </article>
+      `;
+    }
+
+    function executeTeamAttack(attacker, defender, attackIndex, isPlayer) {
+      if (!attacker || attacker.currentHp <= 0 || !defender || defender.currentHp <= 0 || attackIndex == null) return;
+      const playerLead = activeBattle.activePlayerCard;
+      const aiLead = activeBattle.activeAiCard;
+      activeBattle.activePlayerCard = attacker;
+      activeBattle.activeAiCard = defender;
+      executeActionEffect(attacker, defender, attackIndex, isPlayer);
+      activeBattle.activePlayerCard = playerLead;
+      activeBattle.activeAiCard = aiLead;
+    }
+
+    function completeTwoVsTwoDeaths() {
+      const playerSlots = ['activePlayerCard', 'playerPartnerCard'];
+      const aiSlots = ['activeAiCard', 'aiPartnerCard'];
+      for (const slot of playerSlots) {
+        const card = activeBattle[slot];
+        if (card && card.currentHp <= 0) {
+          activeBattle.playerGrave.unshift(card);
+          activeBattle.roundHistory.unshift(`💥 Your ${card.name} was defeated and moved to your left dead pile!`);
+          activeBattle[slot] = null;
+        }
+      }
+      if (!activeBattle.activePlayerCard && activeBattle.playerPartnerCard) {
+        activeBattle.activePlayerCard = activeBattle.playerPartnerCard;
+        activeBattle.playerPartnerCard = null;
+      }
+      if (!activeBattle.activeAiCard && activeBattle.aiPartnerCard) {
+        activeBattle.activeAiCard = activeBattle.aiPartnerCard;
+        activeBattle.aiPartnerCard = null;
+      }
+      for (const slot of aiSlots) {
+        const card = activeBattle[slot];
+        if (card && card.currentHp <= 0) {
+          activeBattle.aiGrave.unshift(card);
+          activeBattle.roundHistory.unshift(`💀 Enemy ${card.name} fainted and moved to the AI graveyard pile!`);
+          activeBattle[slot] = null;
+        }
+      }
+
+      while (activeBattle.aiHand.length < 3 && activeBattle.aiDeck.length > 0) {
+        activeBattle.aiHand.push(activeBattle.aiDeck.shift());
+      }
+      for (const slot of aiSlots) {
+        if (!activeBattle[slot] && (activeBattle.aiHand.length || activeBattle.aiDeck.length)) {
+          activeBattle[slot] = activeBattle.aiHand.shift() || activeBattle.aiDeck.shift();
+          activeBattle.roundHistory.unshift(`⚠️ AI sent ${activeBattle[slot].name} to the battlefield.`);
+        }
+      }
+
+      while (activeBattle.playerHand.length < 3 && activeBattle.playerDeck.length > 0) {
+        activeBattle.playerHand.push(activeBattle.playerDeck.shift());
+      }
+      activeBattle.awaitingReplacement = playerSlots.some(slot => !activeBattle[slot]) &&
+        (activeBattle.playerHand.some(card => card.currentHp > 0) || activeBattle.playerDeck.length > 0);
+    }
+
+    function hasTwoVsTwoCards(slots, hand, deck) {
+      return slots.some(card => card && card.currentHp > 0) ||
+        hand.some(card => card.currentHp > 0) || deck.length > 0;
+    }
+
+    function executeTwoVsTwoRound(isPlayerTurn, chosenActions = null) {
+      const attackers = isPlayerTurn
+        ? [activeBattle.activePlayerCard, activeBattle.playerPartnerCard]
+        : [activeBattle.activeAiCard, activeBattle.aiPartnerCard];
+      const defenders = isPlayerTurn
+        ? [activeBattle.activeAiCard, activeBattle.aiPartnerCard]
+        : [activeBattle.activePlayerCard, activeBattle.playerPartnerCard];
+
+      attackers.forEach((attacker, lane) => {
+        if (!attacker || attacker.currentHp <= 0) return;
+        let action = chosenActions?.[lane];
+        if (!isPlayerTurn) {
+          const available = attacker.attacks
+            .map((attack, index) => ({ attack, index }))
+            .filter(({ attack }) => attacker.disabledAttackId !== attack.id && !isAttackCoolingDown(attacker, attack));
+          if (!available.length) return;
+          action = {
+            attackIndex: available[Math.floor(Math.random() * available.length)].index,
+            targetSlot: defenders[0]?.currentHp > 0 && defenders[1]?.currentHp > 0
+              ? Math.floor(Math.random() * 2)
+              : defenders.findIndex(card => card && card.currentHp > 0)
+          };
+        }
+        const attackIndex = getTeamAttacks(attacker, action?.attackIndex);
+        const target = defenders[action?.targetSlot];
+        if (attackIndex == null || !target || target.currentHp <= 0) return;
+        executeTeamAttack(attacker, target, attackIndex, isPlayerTurn);
+      });
+
+      completeTwoVsTwoDeaths();
+    }
+
+    async function executeTwoVsTwoPlayerTurn(actions) {
+      if (!Array.isArray(actions)) return;
+      const attackers = [activeBattle.activePlayerCard, activeBattle.playerPartnerCard];
+      const defenders = [activeBattle.activeAiCard, activeBattle.aiPartnerCard];
+      for (let slot = 0; slot < attackers.length; slot++) {
+        const action = actions[slot];
+        const attacker = attackers[slot];
+        if (!attacker || attacker.currentHp <= 0) continue;
+        if (attacker.attacks.every(attack => attacker.disabledAttackId === attack.id || isAttackCoolingDown(attacker, attack))) continue;
+        if (!action || !Number.isInteger(action.attackIndex) || !Number.isInteger(action.targetSlot) ||
+            getTeamAttacks(attacker, action.attackIndex) == null ||
+            !defenders[action.targetSlot] || defenders[action.targetSlot].currentHp <= 0) return;
+      }
+      executeTwoVsTwoRound(true, actions);
+      const playerSlots = [activeBattle.activePlayerCard, activeBattle.playerPartnerCard];
+      const aiSlots = [activeBattle.activeAiCard, activeBattle.aiPartnerCard];
+      if (!hasTwoVsTwoCards(aiSlots, activeBattle.aiHand, activeBattle.aiDeck)) {
+        await finalizeBattle(true);
+        return;
+      }
+      if (!hasTwoVsTwoCards(playerSlots, activeBattle.playerHand, activeBattle.playerDeck)) {
+        await finalizeBattle(false);
+        return;
+      }
+      if (activeBattle.awaitingReplacement) {
+        activeBattle.roundHistory.unshift('👉 Choose a replacement fighter from your hand before the next turn.');
+        window.NorthernGoUI.refresh();
+        return;
+      }
+      await executeAiTurn();
+    }
+
     // Switch out Active Card at the cost of a turn
     async function switchPlayerCard(newInstanceId) {
       if (!activeBattle || activeBattle.status === 'completed' || activeBattle.isAiTurn || activeBattle.awaitingReplacement) return;
@@ -5451,8 +6007,8 @@ Check your Browserslist config to be sure that your targets are set up correctly
       if (cardIndex === -1) return;
 
       const chosen = activeBattle.playerHand.splice(cardIndex, 1)[0];
-      activeBattle.activePlayerCard = chosen;
-      activeBattle.awaitingReplacement = false;
+      const slot = !activeBattle.activePlayerCard ? 'activePlayerCard' : 'playerPartnerCard';
+      activeBattle[slot] = chosen;
 
       // Draw replacement into hand from right-side deck pile if available
       if (activeBattle.playerDeck.length &gt; 0) {
@@ -5466,6 +6022,11 @@ Check your Browserslist config to be sure that your targets are set up correctly
       activeBattle.roundHistory.unshift(
         `🛡️ Sent ${chosen.name} onto the battlefield table!`
       );
+      activeBattle.awaitingReplacement = activeBattle.gameMode === '2v2' &&
+        (!activeBattle.activePlayerCard || !activeBattle.playerPartnerCard);
+      if (activeBattle.awaitingReplacement && !activeBattle.playerHand.some(card => card.currentHp > 0) && activeBattle.playerDeck.length > 0) {
+        activeBattle.playerHand.push(activeBattle.playerDeck.shift());
+      }
 
       window.NorthernGoUI.refresh();
     }
@@ -5532,10 +6093,12 @@ Check your Browserslist config to be sure that your targets are set up correctly
         const reward = activeBattle.config.coinReward;
         userCoins += reward;
         activeBattle.roundHistory.unshift(`🎉 VICTORY! Earned +${reward} Coins.`);
-      } else {
+      } else if (activeBattle.difficulty === 'easy') {
         const pity = Math.floor(activeBattle.config.coinReward * 0.15);
         userCoins += pity;
         activeBattle.roundHistory.unshift(`💀 DEFEAT! Consolation reward: +${pity} Coins.`);
+      } else {
+        activeBattle.roundHistory.unshift('💀 DEFEAT! No Coins earned.');
       }
 
       await syncPlayerProfile();
@@ -7074,13 +7637,28 @@ Check your Browserslist config to be sure that your targets are set up correctly
       'koch': 'le%20afbeeldingen/koch.png',
       'van hooijdonk': 'le%20afbeeldingen/van%20hooijdonk.png',
       'groot': 'le%20afbeeldingen/de%20groot.jpg',
-      'hazelaar': 'le%20afbeeldingen/hazelaar.png'
+      'hazelaar': 'le%20afbeeldingen/hazelaar.png',
+      'leeuwis': 'le%20afbeeldingen/leeuwis.png',
+      'vd griend': 'le%20afbeeldingen/vd%20griend.png',
+      'tasma': 'le%20afbeeldingen/tasma.jpg',
+      'vos': 'le%20afbeeldingen/Vos.png',
+      'smit': 'le%20afbeeldingen/smit.png',
+      'le pair': 'le%20afbeeldingen/le%20pair.png',
+      'thape': 'le%20afbeeldingen/thape.jpg',
+      'nienkemper': 'le%20afbeeldingen/nienkemper.png',
+      'aksu': 'le%20afbeeldingen/aksu.png',
+      'houda': 'le%20afbeeldingen/houda.jpg',
+      'heteren': 'le%20afbeeldingen/heteren.jpg',
+      'hobers': 'le%20afbeeldingen/hobers.jpg',
+      'kranenbrug': 'le%20afbeeldingen/kranenburg.jpg',
+      'heerkens': 'le%20afbeeldingen/heerkens.png',
+      'stigter': 'le%20afbeeldingen/stigter.png'
     };
 
     function renderCardArtwork(card, sizeClass) {
       const name = String(card?.name || '').trim().toLowerCase();
       const image = CARD_ARTWORK[name];
-      const icon = card?.rarity === 'BLACK' ? '👁️' : card?.rarity === 'GOLD' ? '👑' : card?.rarity === 'PURPLE' ? '🔮' : card?.rarity === 'BLUE' ? '🌊' : card?.rarity === 'GREEN' ? '🌿' : '⚙️';
+      const icon = card?.rarity === 'ICON' ? '👤' : card?.rarity === 'RAINBOW' ? '🌈' : card?.rarity === 'BLACK' ? '👁️' : card?.rarity === 'GOLD' ? '👑' : card?.rarity === 'PURPLE' ? '🔮' : card?.rarity === 'BLUE' ? '🌊' : card?.rarity === 'GREEN' ? '🌿' : '⚙️';
       const classes = sizeClass || 'w-full h-32';
       const fallback = `<span style="display:none" class="absolute inset-0 items-center justify-center text-4xl">${icon}</span>`;
       if (!image) return `<span class="relative flex ${classes} items-center justify-center overflow-hidden rounded-xl bg-black/40">${icon}</span>`;
@@ -7186,6 +7764,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
           guest_name: guest.name,
           host_deck: host.deck,
           guest_deck: guest.deck,
+          game_mode: role === 'host' ? selectedOnlineMode : null,
           state: null,
           status: 'waiting',
           revision: 0
@@ -7263,7 +7842,13 @@ Check your Browserslist config to be sure that your targets are set up correctly
       if (!onlineMatch || !peerDataChannel || peerDataChannel.readyState !== 'open') return;
       const ownDeck = onlineMatch.row[`${onlineMatch.role}_deck`];
       const ownName = onlineMatch.row[`${onlineMatch.role}_name`];
-      peerDataChannel.send(JSON.stringify({ type: 'hello', name: ownName, deck: ownDeck }));
+      peerDataChannel.send(JSON.stringify({
+        type: 'hello',
+        role: onlineMatch.role,
+        mode: onlineMatch.row.game_mode || selectedOnlineMode,
+        name: ownName,
+        deck: ownDeck
+      }));
       onlineStatus = 'Direct connection established. Syncing decks…';
       window.NorthernGoUI.refresh();
     }
@@ -7274,8 +7859,14 @@ Check your Browserslist config to be sure that your targets are set up correctly
         const message = JSON.parse(event.data);
         if (message.type === 'hello') {
           if (typeof message.name !== 'string' || !Array.isArray(message.deck) ||
-              message.deck.length < 10 || message.deck.length > 30) {
+              message.deck.length < 10 || message.deck.length > 30 ||
+              !['1v1', '2v2'].includes(message.mode) ||
+              !['host', 'guest'].includes(message.role)) {
             throw new Error('The other player sent an invalid name or deck.');
+          }
+          if (message.role === 'host' && onlineMatch.role === 'guest') {
+            selectedOnlineMode = message.mode;
+            onlineMatch.row.game_mode = message.mode;
           }
           const opponentRole = onlineMatch.role === 'host' ? 'guest' : 'host';
           onlineMatch.row[`${opponentRole}_name`] = message.name.slice(0, 24);
@@ -7346,7 +7937,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
       }
     }
 
-    function createOnlineBattleSide(name, deck) {
+    function createOnlineBattleSide(name, deck, gameMode) {
       const cards = deck.map(card => initCardCombatStats(card));
       for (let index = cards.length - 1; index > 0; index--) {
         const swapIndex = Math.floor(Math.random() * (index + 1));
@@ -7356,8 +7947,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
       const hand = selected.splice(0, 3);
       const drawDeck = selected;
       const active = hand.shift();
-      if (drawDeck.length > 0) hand.push(drawDeck.shift());
-      return { name, deck: drawDeck, hand, grave: [], active, awaitingReplacement: false };
+      const partner = gameMode === '2v2' ? hand.shift() || null : null;
+      while (hand.length < 3 && drawDeck.length > 0) hand.push(drawDeck.shift());
+      return { name, deck: drawDeck, hand, grave: [], active, partner, awaitingReplacement: false };
     }
 
     function maybeStartOnlineMatch() {
@@ -7365,9 +7957,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
       const row = onlineMatch.row;
       if (row.status !== 'waiting' || !row.host_deck || !row.guest_deck) return;
       const state = {
+        gameMode: row.game_mode || '1v1',
         players: {
-          host: createOnlineBattleSide(row.host_name || 'Host', row.host_deck),
-          guest: createOnlineBattleSide(row.guest_name || 'Guest', row.guest_deck)
+          host: createOnlineBattleSide(row.host_name || 'Host', row.host_deck, row.game_mode),
+          guest: createOnlineBattleSide(row.guest_name || 'Guest', row.guest_deck, row.game_mode)
         },
         turn: 'host',
         status: 'in_progress',
@@ -7411,14 +8004,25 @@ Check your Browserslist config to be sure that your targets are set up correctly
       return false;
     }
 
-    function promoteOnlineOpponent(state, role) {
-      const opponentRole = role === 'host' ? 'guest' : 'host';
-      const opponent = state.players[opponentRole];
-      if (opponent.active && opponent.active.currentHp > 0) return;
-      if (opponent.active) opponent.grave.unshift(opponent.active);
-      opponent.active = opponent.deck.shift() || opponent.hand.shift() || null;
-      if (opponent.active) {
-        state.history.unshift(`🃏 ${opponent.name} sends ${opponent.active.name} to the battlefield.`);
+    function fillOnlineReplacementHand(side) {
+      while (side.hand.length < 3 && side.deck.length > 0) side.hand.push(side.deck.shift());
+    }
+
+    function onlineSideHasCards(side) {
+      return Boolean(side.active || side.partner || side.hand.some(card => card.currentHp > 0) || side.deck.length);
+    }
+
+    function prepareOnlineReplacement(state, role) {
+      const side = state.players[role];
+      fillOnlineReplacementHand(side);
+      const missingSlot = !side.active || (state.gameMode === '2v2' && !side.partner);
+      const hasReserve = side.hand.some(card => card.currentHp > 0) || side.deck.length > 0;
+      side.awaitingReplacement = missingSlot && hasReserve;
+      if (!onlineSideHasCards(side)) {
+        const opponentRole = role === 'host' ? 'guest' : 'host';
+        state.status = 'completed';
+        state.winner = opponentRole;
+        state.history.unshift(`🏆 ${state.players[opponentRole].name} wins the match!`);
       }
     }
 
@@ -7436,7 +8040,40 @@ Check your Browserslist config to be sure that your targets are set up correctly
       window.NorthernGoUI.refresh();
     }
 
-    async function onlineAttack(attackIndex) {
+    function readTwoVsTwoActions(prefix, attackers, defenders) {
+      const actions = [null, null];
+      for (let slot = 0; slot < attackers.length; slot++) {
+        const attacker = attackers[slot];
+        if (!attacker || attacker.currentHp <= 0) continue;
+        const attackInput = document.getElementById(`${prefix}-attack-${slot}`);
+        const targetInput = document.getElementById(`${prefix}-target-${slot}`);
+        if (!attackInput || !targetInput) return null;
+        const attackIndex = Number(attackInput.value);
+        const targetSlot = Number(targetInput.value);
+        const target = defenders[targetSlot];
+        if (getTeamAttacks(attacker, attackIndex) == null) {
+          if (attacker.attacks.every(attack => attacker.disabledAttackId === attack.id)) continue;
+          return null;
+        }
+        if (!target || target.currentHp <= 0) return null;
+        actions[slot] = { attackIndex, targetSlot };
+      }
+      return actions.some(Boolean) ? actions : null;
+    }
+
+    async function playerExecuteTwoVsTwoTurn() {
+      if (!activeBattle || activeBattle.gameMode !== '2v2' || activeBattle.status === 'completed' ||
+          activeBattle.isAiTurn || activeBattle.awaitingReplacement) return;
+      const actions = readTwoVsTwoActions(
+        'ai-battle',
+        [activeBattle.activePlayerCard, activeBattle.playerPartnerCard],
+        [activeBattle.activeAiCard, activeBattle.aiPartnerCard]
+      );
+      if (!actions) return;
+      await executeTwoVsTwoPlayerTurn(actions);
+    }
+
+    async function onlineAttack(attackIndex, teamActions = null) {
       if (!onlineMatch?.row?.state || onlineMatch.row.status !== 'in_progress') return;
       const original = onlineMatch.row.state;
       if (original.turn !== onlineMatch.role) return;
@@ -7447,50 +8084,132 @@ Check your Browserslist config to be sure that your targets are set up correctly
       if (side.awaitingReplacement || !side.active || !opponent.active) return;
       const priorBattle = activeBattle;
       activeBattle = {
+        gameMode: state.gameMode || '1v1',
         roundHistory: state.history,
         playerDeck: side.deck,
         playerHand: side.hand,
         playerGrave: side.grave,
         activePlayerCard: side.active,
+        playerPartnerCard: side.partner || null,
         aiDeck: opponent.deck,
+        aiHand: opponent.hand,
         aiGrave: opponent.grave,
         activeAiCard: opponent.active,
+        aiPartnerCard: opponent.partner || null,
+        awaitingReplacement: false,
         status: 'in_progress'
       };
       try {
-        executeActionEffect(side.active, opponent.active, attackIndex, true);
-        side.active = activeBattle.activePlayerCard;
-        opponent.active = activeBattle.activeAiCard;
+        if (state.gameMode === '2v2') {
+          const attackers = [side.active, side.partner];
+          const defenders = [opponent.active, opponent.partner];
+          attackers.forEach((attacker, lane) => {
+            const action = teamActions?.[lane];
+            const selectedAttack = getTeamAttacks(attacker, action?.attackIndex);
+            const target = defenders[action?.targetSlot];
+            if (selectedAttack == null || !target || target.currentHp <= 0) return;
+            executeTeamAttack(attacker, target, selectedAttack, true);
+          });
+          for (const [owner, slots] of [
+            [side, ['active', 'partner']],
+            [opponent, ['active', 'partner']]
+          ]) {
+            for (const slot of slots) {
+              const card = owner[slot];
+              if (card && card.currentHp <= 0) {
+                if (card.stolenByAttacker) {
+                  delete card.stolenByAttacker;
+                  card.currentHp = card.maxHp;
+                } else if (card.forceSwitched) {
+                  delete card.forceSwitched;
+                  card.currentHp = card.forceSwitchHp;
+                  delete card.forceSwitchHp;
+                  owner.deck.push(card);
+                } else {
+                  owner.grave.unshift(card);
+                  state.history.unshift(`💀 ${owner.name}'s ${card.name} was defeated.`);
+                }
+                owner[slot] = null;
+              }
+            }
+
+          }
+          for (const owner of [side, opponent]) {
+            if (!owner.active && owner.partner) {
+              owner.active = owner.partner;
+              owner.partner = null;
+            }
+          }
+          prepareOnlineReplacement(state, onlineMatch.role);
+          if (state.status !== 'completed') prepareOnlineReplacement(state, opponentRole);
+        } else {
+          executeActionEffect(side.active, opponent.active, attackIndex, true);
+          side.active = activeBattle.activePlayerCard;
+          opponent.active = activeBattle.activeAiCard;
+          if (opponent.active?.currentHp <= 0) {
+            if (opponent.active.stolenByAttacker) {
+              delete opponent.active.stolenByAttacker;
+              opponent.active.currentHp = opponent.active.maxHp;
+            } else if (opponent.active.forceSwitched) {
+              delete opponent.active.forceSwitched;
+              opponent.active.currentHp = opponent.active.forceSwitchHp;
+              delete opponent.active.forceSwitchHp;
+              opponent.deck.push(opponent.active);
+            } else {
+              opponent.grave.unshift(opponent.active);
+              state.history.unshift(`💀 ${opponent.name}'s ${opponent.active.name} was defeated.`);
+            }
+            opponent.active = null;
+            prepareOnlineReplacement(state, opponentRole);
+          }
+          if (side.active?.currentHp <= 0) {
+            if (side.active.stolenByAttacker) {
+              delete side.active.stolenByAttacker;
+              side.active.currentHp = side.active.maxHp;
+            } else if (side.active.forceSwitched) {
+              delete side.active.forceSwitched;
+              side.active.currentHp = side.active.forceSwitchHp;
+              delete side.active.forceSwitchHp;
+              side.deck.push(side.active);
+            } else {
+              side.grave.unshift(side.active);
+              state.history.unshift(`💀 ${side.name}'s ${side.active.name} was defeated.`);
+            }
+            side.active = null;
+            prepareOnlineReplacement(state, onlineMatch.role);
+          }
+        }
         state.history = activeBattle.roundHistory;
       } finally {
         activeBattle = priorBattle;
       }
-      if (side.active?.currentHp <= 0) {
-        side.grave.unshift(side.active);
-        side.active = null;
-        if (!side.hand.some(card => card.currentHp > 0) && side.deck.length > 0) {
-          side.hand.push(side.deck.shift());
-        }
-        side.awaitingReplacement = side.hand.some(card => card.currentHp > 0);
-        if (!side.awaitingReplacement) finishOnlineMatchIfEmpty(state, onlineMatch.role);
+      if (state.status !== 'completed') {
+        if (opponent.awaitingReplacement) state.turn = opponentRole;
+        else if (side.awaitingReplacement) state.turn = onlineMatch.role;
+        else state.turn = opponentRole;
       }
-      if (opponent.active?.currentHp <= 0) {
-        opponent.grave.unshift(opponent.active);
-        opponent.active = null;
-        promoteOnlineOpponent(state, onlineMatch.role);
-        if (!opponent.active && opponent.hand.length === 0 && opponent.deck.length === 0) {
-          state.status = 'completed';
-          state.winner = onlineMatch.role;
-          state.history.unshift(`🏆 ${side.name} wins the match!`);
-        }
-      }
-      if (state.status !== 'completed' && !side.awaitingReplacement) state.turn = opponentRole;
       try {
         await saveOnlineState(state, onlineMatch.row.revision);
       } catch (error) {
         onlineStatus = error?.message || 'Could not save that turn.';
         window.NorthernGoUI.refresh();
       }
+    }
+
+    async function onlineAttackTeam() {
+      const state = onlineMatch?.row?.state;
+      if (!state || state.gameMode !== '2v2' || state.turn !== onlineMatch.role) return;
+      const side = state.players[onlineMatch.role];
+      const opponentRole = onlineMatch.role === 'host' ? 'guest' : 'host';
+      const opponent = state.players[opponentRole];
+      if (side.awaitingReplacement) return;
+      const actions = readTwoVsTwoActions(
+        'online-battle',
+        [side.active, side.partner],
+        [opponent.active, opponent.partner]
+      );
+      if (!actions) return;
+      await onlineAttack(null, actions);
     }
 
     async function onlineChooseCard(handIndex) {
@@ -7504,9 +8223,13 @@ Check your Browserslist config to be sure that your targets are set up correctly
       if (!side.awaitingReplacement && (!side.active || side.active.instanceId === side.hand[cardIndex].instanceId)) return;
       const [chosen] = side.hand.splice(cardIndex, 1);
       if (side.awaitingReplacement) {
-        side.active = chosen;
-        side.awaitingReplacement = false;
-        if (side.deck.length) side.hand.push(side.deck.shift());
+        if (!side.active) side.active = chosen;
+        else if (state.gameMode === '2v2' && !side.partner) side.partner = chosen;
+        else return;
+        fillOnlineReplacementHand(side);
+        const missingSlot = !side.active || (state.gameMode === '2v2' && !side.partner);
+        side.awaitingReplacement = missingSlot &&
+          (side.hand.some(card => card.currentHp > 0) || side.deck.length > 0);
         state.history.unshift(`🛡️ ${side.name} sent ${chosen.name} onto the battlefield.`);
       } else {
         side.hand.splice(cardIndex, 0, side.active);
@@ -7529,6 +8252,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
     let isOpeningPack = false;
     let currentPack = [];
     let openedPackCards = [];
+    let iconRevealStage = 0;
     let allCards = [];
     let binderFilter = 'GREY';
     let binderSearch = '';
@@ -7543,7 +8267,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
       blue: 0,
       purple: 0,
       gold: 0,
-      black: 0
+      black: 0,
+      rainbow: 0,
+      icon: 0
     };
 
     const PACK_PRICE = 100;
@@ -7552,6 +8278,20 @@ Check your Browserslist config to be sure that your targets are set up correctly
     // AI Battle State
     let activeBattle = null;
     let selectedDifficulty = 'medium';
+    let selectedBattleMode = '1v1';
+    let selectedOnlineMode = '1v1';
+
+    function setBattleMode(mode) {
+      if (!['1v1', '2v2'].includes(mode)) return;
+      selectedBattleMode = mode;
+      window.NorthernGoUI.refresh();
+    }
+
+    function setOnlineBattleMode(mode) {
+      if (!['1v1', '2v2'].includes(mode)) return;
+      selectedOnlineMode = mode;
+      window.NorthernGoUI.refresh();
+    }
 
     const AI_DIFFICULTIES = {
       easy: {
@@ -7585,6 +8325,14 @@ Check your Browserslist config to be sure that your targets are set up correctly
         avgPower: 450,
         coinReward: 600,
         description: 'Endgame anomaly with immense power and secret black relics.'
+      },
+      rainbow: {
+        name: 'Rainbow Sovereign',
+        badge: 'rainbow-card-badge',
+        cardPool: ['RAINBOW'],
+        avgPower: 1000,
+        coinReward: 2000,
+        description: 'An ultimate challenger whose entire deck is made of 10x Rainbow cards.'
       }
     };
 
@@ -7643,6 +8391,24 @@ Check your Browserslist config to be sure that your targets are set up correctly
         bgClass: 'bg-black text-rose-100',
         badge: 'bg-fuchsia-950 text-fuchsia-300 border-fuchsia-500',
         glow: 'glow-black'
+      },
+      RAINBOW: {
+        name: 'Rainbow',
+        tier: 'Ultra Secret',
+        color: '#fff',
+        borderClass: 'border-white',
+        bgClass: 'rainbow-card-bg text-white',
+        badge: 'rainbow-card-badge',
+        glow: 'glow-rainbow'
+      },
+      ICON: {
+        name: 'Icons',
+        tier: 'ICON',
+        color: '#fff',
+        borderClass: 'border-slate-300',
+        bgClass: 'bg-white text-slate-950',
+        badge: 'bg-slate-100 text-slate-950 border-slate-300',
+        glow: 'shadow-[0_0_24px_rgba(255,255,255,0.25)]'
       }
     };
 
@@ -7652,7 +8418,8 @@ Check your Browserslist config to be sure that your targets are set up correctly
       BLUE: 2.5,
       PURPLE: 3,
       GOLD: 4,
-      BLACK: 6
+      BLACK: 6,
+      RAINBOW: 10
     };
 
     const BASE_CARD_TEMPLATES = [
@@ -7798,8 +8565,172 @@ Check your Browserslist config to be sure that your targets are set up correctly
           { id: 'monsieur_hazelaar', name: 'Monsieur Hazelaaar', type: 'damage', dmg: 60, desc: 'best attack there is (damage 60)' },
           { id: 'ca_va', name: 'Ça va', type: 'gamble_full_heal', dmg: 0, desc: 'you found him in the wild 50% of a full hp restore' }
         ]
+      },
+      {
+        name: 'Le pair',
+        baseHp: 35,
+        type: 'devil',
+        desc: 'Pencil case throw: a hidden needle catches the opponent off guard (damage 25).',
+        attacks: [
+          { id: 'le_pair_pencil_case', name: 'Pencil case throw', type: 'damage', dmg: 25, desc: 'A hidden needle catches the opponent off guard (damage 25).' }
+        ]
+      },
+      {
+        name: 'Thape',
+        baseHp: 40,
+        type: 'teacher',
+        desc: 'Pythagorean theorem: a dull geometry lesson (damage 20). Misplaced joke: makes the opponent switch their active card.',
+        attacks: [
+          { id: 'thape_pythagorean_theorem', name: 'Pythagorean theorem', type: 'damage', dmg: 20, desc: 'A dull geometry lesson (damage 20).' },
+          { id: 'thape_misplaced_joke', name: 'Misplaced joke', type: 'force_switch', dmg: 0, desc: 'Makes the opponent switch their active card.' }
+        ]
+      },
+      {
+        name: 'Nienkemper',
+        baseHp: 30,
+        type: 'devil',
+        desc: 'Straight death: a decisive strike (damage 60).',
+        attacks: [
+          { id: 'nienkemper_straight_death', name: 'Straight death', type: 'damage', dmg: 60, desc: 'A decisive strike (damage 60).' }
+        ]
+      },
+      {
+        name: 'Aksu',
+        baseHp: 80,
+        type: 'neutral',
+        desc: 'Wheel of punishment: redirects the opponent’s next attack back at them (2-turn cooldown). Aura: overwhelming presence (damage 40).',
+        attacks: [
+          { id: 'aksu_wheel_of_punishment', name: 'Wheel of punishment', type: 'redirect_attack', cooldown: 2, dmg: 0, desc: 'Redirects the opponent’s next attack back at them (2-turn cooldown).' },
+          { id: 'aksu_aura', name: 'Aura', type: 'damage', dmg: 40, desc: 'Overwhelming presence (damage 40).' }
+        ]
+      },
+      {
+        name: 'Houda',
+        baseHp: 70,
+        type: 'marrocan',
+        desc: 'One for all, all for one: takes Hamdi from the opponent and adds him to your draw pile. Math olympiad: (damage 30).',
+        attacks: [
+          { id: 'houda_one_for_all', name: 'One for all, all for one', type: 'steal_hamdi', dmg: 0, desc: 'If the opponent is Hamdi, take that card and add it to your draw pile.' },
+          { id: 'houda_math_olympiad', name: 'Math olympiad', type: 'damage', dmg: 30, desc: 'You were entered into the contest (damage 30).' }
+        ]
+      },
+      {
+        name: 'Heteren',
+        baseHp: 50,
+        type: 'teacher',
+        desc: 'Short temper: a sudden outburst (damage 40).',
+        attacks: [
+          { id: 'heteren_short_temper', name: 'Short temper', type: 'damage', dmg: 40, desc: 'A sudden outburst (damage 40).' }
+        ]
+      },
+      {
+        name: 'Hobers',
+        baseHp: 25,
+        type: 'devil',
+        desc: 'Questionable style of clothing: an unforgettable outfit distracts the opponent (damage 60).',
+        attacks: [
+          { id: 'hobers_questionable_style', name: 'Questionable style of clothing', type: 'damage', dmg: 60, desc: 'An unforgettable outfit distracts the opponent (damage 60).' }
+        ]
+      },
+      {
+        name: 'Kranenbrug',
+        baseHp: 40,
+        type: 'devil',
+        desc: 'Poyraz: summons Poyraz and sacrifices this card. Kranenburgs huis: (damage 25).',
+        attacks: [
+          { id: 'kranenbrug_poyraz', name: 'Poyraz', type: 'suicide', dmg: 0, desc: 'Summons Poyraz and sacrifices this card.' },
+          { id: 'kranenbrug_house', name: 'Kranenburgs huis', type: 'damage', dmg: 25, desc: 'Pulls the opponent into the house (damage 25).' }
+        ]
+      },
+      {
+        name: 'Heerkens',
+        baseHp: 60,
+        type: 'devil',
+        desc: 'Evil witch: if Kranenbrug is on the field, all field cards are knocked out; otherwise deals 30 damage.',
+        attacks: [
+          { id: 'heerkens_evil_witch', name: 'Evil witch', type: 'conditional_nuke', dmg: 30, desc: 'If Kranenbrug is on the field, knock out everyone; otherwise deal 30 damage.' }
+        ]
+      },
+      {
+        name: 'Stigter',
+        baseHp: 40,
+        type: 'teacher',
+        desc: 'Eine klein Weihnachtsbaum: a surprise holiday hit (damage 40).',
+        attacks: [
+          { id: 'stigter_weihnachtsbaum', name: 'Eine klein Weihnachtsbaum', type: 'damage', dmg: 40, desc: 'A surprise holiday hit (damage 40).' }
+        ]
       }
     ];
+
+    const ICON_CARD_TEMPLATES = [
+      {
+        name: 'Leeuwis',
+        baseHp: 200,
+        type: 'NPC',
+        image: 'le%20afbeeldingen/leeuwis.png',
+        desc: 'Judge: hits his hammer down hard (damage 100). Wrong cake: hits for 200 to either you or the opponent.',
+        attacks: [
+          { id: 'icon_leeuwis_judge', name: 'Judge', type: 'damage', dmg: 100, desc: 'Hits his hammer down hard (damage 100).' },
+          { id: 'icon_leeuwis_wrong_cake', name: 'Wrong cake', type: 'random_target_damage', dmg: 200, desc: 'Hits for 200 damage to either you or the opponent.' }
+        ]
+      },
+      {
+        name: 'Vd Griend',
+        baseHp: 240,
+        type: 'legend',
+        image: 'le%20afbeeldingen/vd%20griend.png',
+        desc: 'Breaking bad: explains every joke in the series (damage 120).',
+        attacks: [
+          { id: 'icon_vd_griend_breaking_bad', name: 'Breaking bad', type: 'damage', dmg: 120, desc: 'Explains every joke in the series (damage 120).' }
+        ]
+      },
+      {
+        name: 'Tasma',
+        baseHp: 150,
+        type: 'NPC',
+        image: 'le%20afbeeldingen/tasma.jpg',
+        desc: 'Desmos BMW: puts you to sleep with his math-nerd type shi (damage 90).',
+        attacks: [
+          { id: 'icon_tasma_desmos_bmw', name: 'Desmos BMW', type: 'damage', dmg: 90, desc: 'Puts you to sleep with his math-nerd type shi (damage 90).' }
+        ]
+      },
+      {
+        name: 'Vos',
+        baseHp: 300,
+        type: 'legend',
+        image: 'le%20afbeeldingen/Vos.png',
+        desc: 'Body slam: slams into you like prime Dhiele (damage 130). Ai video: shows a picture of himself being skinny and heals himself 50 HP.',
+        attacks: [
+          { id: 'icon_vos_body_slam', name: 'Body slam', type: 'damage', dmg: 130, desc: 'Slams into you like prime Dhiele (damage 130).' },
+          { id: 'icon_vos_ai_video', name: 'Ai video', type: 'self_heal', heal: 50, desc: 'Shows you a picture of himself being skinny: heals himself 50 HP.' }
+        ]
+      },
+      {
+        name: 'Smit',
+        baseHp: 140,
+        type: 'devil',
+        desc: 'Instant punishment: always attacks first and deals 180 damage.',
+        attacks: [
+          { id: 'icon_smit_instant_punishment', name: 'Instant punishment', type: 'priority_damage', dmg: 180, priority: true, desc: 'Always attacks first (damage 180).' }
+        ]
+      }
+    ];
+
+    function createIconCard() {
+      const template = ICON_CARD_TEMPLATES[Math.floor(Math.random() * ICON_CARD_TEMPLATES.length)];
+      return {
+        id: 'icon-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
+        name: template.name,
+        type: template.type,
+        baseName: template.name,
+        power: template.baseHp,
+        baseHp: template.baseHp,
+        description: template.desc,
+        rarity: 'ICON',
+        serialNumber: 'ICON-' + Math.floor(100000 + Math.random() * 900000),
+        dateAcquired: new Date().toISOString()
+      };
+    }
 
     // Calculate probabilities
     // Cards 1-4 standard: Grey 50%, Green 20%, Blue 15%, Purple 10%, Gold 4%, Black 1%
@@ -7809,19 +8740,21 @@ Check your Browserslist config to be sure that your targets are set up correctly
       if (rand < 70) return getCardOfRarity('GREEN'); // 50 + 20
       if (rand < 85) return getCardOfRarity('BLUE');  // 70 + 15
       if (rand < 95) return getCardOfRarity('PURPLE');// 85 + 10
-      if (rand < 99) return getCardOfRarity('GOLD');  // 95 + 4
-      return getCardOfRarity('BLACK');               // 99 + 1
+      if (rand < 99) return getCardOfRarity('GOLD');    // 95 + 4
+      if (rand < 99.99) return getCardOfRarity('BLACK'); // 0.99%
+      return getCardOfRarity('RAINBOW');                // 0.01%
     }
 
-    // Card 5 shifted right: Grey 1%, Green 50%, Blue 20%, Purple 15%, Gold 10%, Black 4%
+    // Card 5 shifted right: Grey 1%, Green 50%, Blue 20%, Purple 15%, Gold 13%, Black 0.99%, Rainbow 0.01%
     function rollShiftedCard() {
       const rand = Math.random() * 100;
       if (rand < 1) return getCardOfRarity('GREY');   // 1%
       if (rand < 51) return getCardOfRarity('GREEN'); // 1 + 50 = 51%
       if (rand < 71) return getCardOfRarity('BLUE');  // 51 + 20 = 71%
       if (rand < 86) return getCardOfRarity('PURPLE');// 71 + 15 = 86%
-      if (rand < 96) return getCardOfRarity('GOLD');  // 86 + 10 = 96%
-      return getCardOfRarity('BLACK');               // 96 + 4 = 100%
+      if (rand < 99) return getCardOfRarity('GOLD');    // 86 + 13 = 99%
+      if (rand < 99.99) return getCardOfRarity('BLACK'); // 0.99%
+      return getCardOfRarity('RAINBOW');                // 0.01%
     }
 
     function getCardOfRarity(rarityKey) {
@@ -7901,7 +8834,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
     }
 
     function recalculateStats() {
-      statsCollection = { grey: 0, green: 0, blue: 0, purple: 0, gold: 0, black: 0 };
+      statsCollection = { grey: 0, green: 0, blue: 0, purple: 0, gold: 0, black: 0, rainbow: 0, icon: 0 };
       (allCards || []).forEach(c => {
         const r = (c?.rarity || '').toLowerCase();
         if (statsCollection[r] !== undefined) {
@@ -7989,6 +8922,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
     // Single Card Render Helper
     function renderCardComponent(card, isRevealed, index) {
+      if (card.rarity === 'ICON') return renderIconPackCard(card);
       const rarityData = RARITIES[card.rarity] || RARITIES.GREY;
       const isShiftedSlot = index === 4;
 
@@ -8048,6 +8982,28 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
           </div>
         </div>
+      `;
+    }
+
+    function renderIconPackCard(card) {
+      const template = ICON_CARD_TEMPLATES.find(icon => icon.name === card.name);
+      const revealSteps = ['Reveal type', 'Reveal HP', 'Reveal attacks', 'Reveal picture'];
+      return `
+        <section class="mx-auto w-full max-w-xl rounded-3xl border-2 border-slate-300 bg-white p-5 text-slate-950 shadow-[0_0_40px_rgba(255,255,255,0.35)] sm:p-8">
+          <div class="mb-5 flex items-center justify-between gap-3">
+            <span class="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-black tracking-[0.25em]">ICON</span>
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-600">One collectible icon card · added to your binder</span>
+          </div>
+          <div class="min-h-64 space-y-5 text-center">
+            ${iconRevealStage >= 1 ? `<div class="animate-pulse"><span class="block text-[10px] font-bold uppercase tracking-[0.3em] text-slate-600">Type revealed</span><span class="mt-1 block text-3xl font-black">${card.type}</span></div>` : '<div class="py-10 text-lg font-bold tracking-widest text-slate-600">A new icon is waiting...</div>'}
+            ${iconRevealStage >= 2 ? `<div><span class="block text-[10px] font-bold uppercase tracking-[0.3em] text-slate-600">HP revealed</span><span class="mt-1 block text-4xl font-black">${card.baseHp} HP</span></div>` : ''}
+            ${iconRevealStage >= 3 ? `<div class="rounded-2xl border border-slate-300 bg-slate-50 p-4 text-left"><span class="mb-3 block text-center text-[10px] font-bold uppercase tracking-[0.3em] text-slate-600">Attacks revealed</span>${(template?.attacks || []).map(attack => `<div class="mb-3 last:mb-0"><h4 class="font-black">${attack.name}${attack.dmg ? ` · ${attack.dmg} damage` : attack.heal ? ` · heals ${attack.heal} HP` : ''}</h4><p class="mt-1 text-sm leading-relaxed text-slate-700">${attack.desc}</p></div>`).join('')}</div>` : ''}
+            ${iconRevealStage >= 4 ? `<div class="animate-pulse"><h3 class="mb-3 text-3xl font-black">${card.name}</h3><div class="mx-auto max-w-sm overflow-hidden rounded-2xl border border-slate-300">${renderCardArtwork(card, 'w-full h-64')}</div></div>` : ''}
+          </div>
+          <div class="mt-6 text-center">
+            ${iconRevealStage < 4 ? `<button type="button" onclick="advanceIconReveal()" class="rounded-xl bg-white px-6 py-3 text-sm font-black uppercase tracking-wider text-slate-950 transition hover:bg-slate-200">${revealSteps[iconRevealStage]}</button>` : '<span class="text-sm font-bold uppercase tracking-wider text-emerald-300">Reveal complete</span>'}
+          </div>
+        </section>
       `;
     }
   </script>
@@ -8162,26 +9118,34 @@ Check your Browserslist config to be sure that your targets are set up correctly
       }
 
       isOpeningPack = true;
-      openedPackCards = [false, false, false, false, false];
+      iconRevealStage = 0;
+      openedPackCards = [];
 
       if (!isFree) {
         userCoins -= PACK_PRICE;
       }
 
-      // Generate 5 cards
-      // Cards 1-4 standard, Card 5 shifted odds
-      const c1 = rollStandardCard();
-      const c2 = rollStandardCard();
-      const c3 = rollStandardCard();
-      const c4 = rollStandardCard();
-      const c5 = rollShiftedCard(); // Shifted odds!
-      
-      currentPack = [c1, c2, c3, c4, c5];
+      if (Math.random() < 0.01) {
+        currentPack = [createIconCard()];
+      } else {
+        const c1 = rollStandardCard();
+        const c2 = rollStandardCard();
+        const c3 = rollStandardCard();
+        const c4 = rollStandardCard();
+        const c5 = rollShiftedCard();
+        currentPack = [c1, c2, c3, c4, c5];
+      }
       
       // Persist immediately in database
       await recordPackOpening(currentPack);
 
       isOpeningPack = false;
+      window.NorthernGoUI.refresh();
+    }
+
+    function advanceIconReveal() {
+      if (!currentPack[0] || currentPack[0].rarity !== 'ICON') return;
+      iconRevealStage = Math.min(4, iconRevealStage + 1);
       window.NorthernGoUI.refresh();
     }
 
@@ -8246,8 +9210,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
     // Helper to generate full HP & combat attacks for the exact card pool with rarity multipliers
     function initCardCombatStats(card) {
-      const template = BASE_CARD_TEMPLATES.find(b => b.name === card.name || b.name === card.baseName) || BASE_CARD_TEMPLATES[0];
-      const mult = RARITY_MULTIPLIERS[card.rarity] || card.rarityMultiplier || 1;
+      const template = [...BASE_CARD_TEMPLATES, ...ICON_CARD_TEMPLATES]
+        .find(b => b.name === card.name || b.name === card.baseName) || BASE_CARD_TEMPLATES[0];
+      const mult = card.rarity === 'ICON' ? 1 : (RARITY_MULTIPLIERS[card.rarity] || card.rarityMultiplier || 1);
       const hp = Math.round(template.baseHp * mult);
 
       const attacks = template.attacks.map(a => {
@@ -8312,6 +9277,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
       // 3 cards drawn to hand
       const playerHand = selectedTenCombatCards.splice(0, 3);
+      const playerPartnerCard = selectedBattleMode === '2v2' ? playerHand.shift() || selectedTenCombatCards.shift() || null : null;
       // The remaining 7 cards form the draw pile (right side)
       const playerDeck = selectedTenCombatCards;
 
@@ -8322,6 +9288,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
       if (playerDeck.length > 0) {
         playerHand.push(playerDeck.shift());
       }
+      while (playerHand.length < 3 && playerDeck.length > 0) playerHand.push(playerDeck.shift());
 
       // Generate 10 cards for AI
       const aiTotalPool = [];
@@ -8336,19 +9303,24 @@ Check your Browserslist config to be sure that your targets are set up correctly
       }
 
       const activeAiCard = aiTotalPool.shift();
+      const aiPartnerCard = selectedBattleMode === '2v2' ? aiTotalPool.shift() || null : null;
       const aiDeck = aiTotalPool; // Remaining 9 cards in AI draw pile (right side)
 
       activeBattle = {
+        gameMode: selectedBattleMode,
         difficulty: selectedDifficulty,
         config: config,
         playerDeck: playerDeck,         // Right draw deck
         playerHand: playerHand,         // 3 cards in hand
         playerGrave: [],                // Left dead pile
         activePlayerCard: activePlayerCard,
+        playerPartnerCard: playerPartnerCard,
         awaitingReplacement: false,     // Player must choose replacement card
         aiDeck: aiDeck,                 // Right draw deck
+        aiHand: [],
         aiGrave: [],                    // Left dead pile
         activeAiCard: activeAiCard,
+        aiPartnerCard: aiPartnerCard,
         roundHistory: [
           `⚔️ Battle commenced against ${config.name}! 10 cards drawn at random onto the arena table.`
         ],
@@ -8395,6 +9367,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
           attacker.disabledAttackId = null;
         }
       }
+      if (attacker.wheelCooldown > 0) attacker.wheelCooldown--;
 
       if (attacker.stunned) {
         attacker.stunned = false;
@@ -8437,6 +9410,12 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
       // Handle Immunity check on defender
       const applyDamageToDefender = (amount) => {
+        if (defender.redirectAttack) {
+          defender.redirectAttack = false;
+          attacker.currentHp = Math.max(0, attacker.currentHp - amount);
+          activeBattle.roundHistory.unshift(`🛞 ${targetLabel} redirected the attack back to ${actorLabel} for ${amount} damage!`);
+          return amount;
+        }
         if (defender.isImmune) {
           activeBattle.roundHistory.unshift(`🛡️ ${targetLabel} hid behind the pole and completely blocked the attack!`);
           return 0;
@@ -8445,7 +9424,68 @@ Check your Browserslist config to be sure that your targets are set up correctly
         return amount;
       };
 
-      if (atk.id === 'useless') {
+      if (atk.id === 'icon_leeuwis_wrong_cake') {
+        if (Math.random() < 0.5) {
+          attacker.currentHp = Math.max(0, attacker.currentHp - atk.dmg);
+          activeBattle.roundHistory.unshift(`🍰 ${actorLabel} used [Wrong cake]: the cake hit them for ${atk.dmg} DMG!`);
+        } else {
+          applyDamageToDefender(atk.dmg);
+          activeBattle.roundHistory.unshift(`🍰 ${actorLabel} used [Wrong cake]: the cake hit ${targetLabel} for ${atk.dmg} DMG!`);
+        }
+      } else if (atk.id === 'icon_vos_ai_video') {
+        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + atk.heal);
+        activeBattle.roundHistory.unshift(`📹 ${actorLabel} used [Ai video] and healed ${atk.heal} HP!`);
+      } else if (atk.id === 'icon_smit_instant_punishment') {
+        applyDamageToDefender(atk.dmg);
+        activeBattle.roundHistory.unshift(`⚡ ${actorLabel} used [Instant punishment] for ${atk.dmg} damage!`);
+      } else if (atk.id === 'thape_misplaced_joke') {
+        const targetHand = isPlayer ? activeBattle.aiHand : activeBattle.playerHand;
+        const targetDeck = isPlayer ? activeBattle.aiDeck : activeBattle.playerDeck;
+        const targetPartner = isPlayer ? activeBattle.aiPartnerCard : activeBattle.playerPartnerCard;
+        if ((targetHand || []).some(card => card.currentHp > 0) || targetDeck.length > 0 || targetPartner?.currentHp > 0) {
+          defender.forceSwitched = true;
+          defender.forceSwitchHp = defender.currentHp;
+          defender.currentHp = 0;
+          activeBattle.roundHistory.unshift(`🔄 ${actorLabel} used [Misplaced joke] and forced ${targetLabel} to switch out!`);
+        } else {
+          activeBattle.roundHistory.unshift(`🔄 ${actorLabel} used [Misplaced joke], but ${targetLabel} has no card to switch to.`);
+        }
+      } else if (atk.id === 'aksu_wheel_of_punishment') {
+        if (attacker.wheelCooldown > 0) {
+          activeBattle.roundHistory.unshift(`⏳ ${actorLabel} cannot use [Wheel of punishment] for ${attacker.wheelCooldown} more turns.`);
+        } else {
+          attacker.wheelCooldown = 3;
+          attacker.redirectAttack = true;
+          activeBattle.roundHistory.unshift(`🛞 ${actorLabel} activated [Wheel of punishment]; the opponent's next attack will hit themself.`);
+        }
+      } else if (atk.id === 'houda_one_for_all') {
+        if (defender.name.toLowerCase() === 'hamdi') {
+          const ownerDeck = isPlayer ? activeBattle.playerDeck : activeBattle.aiDeck;
+          defender.stolenByAttacker = true;
+          defender.currentHp = 0;
+          ownerDeck.push(defender);
+          activeBattle.roundHistory.unshift(`🤝 ${actorLabel} used [One for all, all for one] and added Hamdi to their draw pile!`);
+        } else {
+          activeBattle.roundHistory.unshift(`🤝 ${actorLabel} used [One for all, all for one], but it only works against Hamdi.`);
+        }
+      } else if (atk.id === 'kranenbrug_poyraz') {
+        attacker.currentHp = 0;
+        activeBattle.roundHistory.unshift(`🪽 ${actorLabel} used [Poyraz] and sacrificed themself.`);
+      } else if (atk.id === 'heerkens_evil_witch') {
+        const fieldCards = (activeBattle.fieldCards || [
+          activeBattle.activePlayerCard,
+          activeBattle.playerPartnerCard,
+          activeBattle.activeAiCard,
+          activeBattle.aiPartnerCard
+        ]).filter(card => card && card.currentHp > 0);
+        if (fieldCards.some(card => card.name.toLowerCase() === 'kranenbrug' || card.name.toLowerCase() === 'kranenburg')) {
+          fieldCards.forEach(card => { card.currentHp = 0; });
+          activeBattle.roundHistory.unshift(`🧙 ${actorLabel} used [Evil witch] while Kranenbrug was on the field: everyone was knocked out!`);
+        } else {
+          applyDamageToDefender(atk.dmg);
+          activeBattle.roundHistory.unshift(`🧙 ${actorLabel} used [Evil witch] for ${atk.dmg} damage!`);
+        }
+      } else if (atk.id === 'useless') {
         attacker.currentHp = 0;
         activeBattle.roundHistory.unshift(`💀 ${actorLabel} used [useless] and killed himself!`);
       } else if (atk.id === 'smegge') {
@@ -8559,6 +9599,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
     async function playerExecuteAttack(attackIndex) {
       if (!activeBattle || activeBattle.status === 'completed' || activeBattle.isAiTurn || activeBattle.awaitingReplacement) return;
       if (!activeBattle.activePlayerCard || !activeBattle.activeAiCard) return;
+      if (activeBattle.gameMode === '2v2') {
+        await playerExecuteTwoVsTwoTurn();
+        return;
+      }
 
       const pCard = activeBattle.activePlayerCard;
       const aiCard = activeBattle.activeAiCard;
@@ -8567,7 +9611,17 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
       // Check if Player card died (e.g. from de Rhoon's useless or Jalapeno poison)
       if (pCard.currentHp <= 0) {
-        activeBattle.playerGrave.unshift(pCard);
+        if (pCard.stolenByAttacker) {
+          delete pCard.stolenByAttacker;
+          pCard.currentHp = pCard.maxHp;
+        } else if (pCard.forceSwitched) {
+          delete pCard.forceSwitched;
+          pCard.currentHp = pCard.forceSwitchHp;
+          delete pCard.forceSwitchHp;
+          activeBattle.playerHand.push(pCard);
+        } else {
+          activeBattle.playerGrave.unshift(pCard);
+        }
         activeBattle.activePlayerCard = null;
         activeBattle.roundHistory.unshift(`💥 Your ${pCard.name} was defeated and moved to your left dead pile!`);
 
@@ -8584,7 +9638,17 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
       // Check if AI Card fainted
       if (aiCard.currentHp <= 0) {
-        activeBattle.aiGrave.unshift(aiCard);
+        if (aiCard.stolenByAttacker) {
+          delete aiCard.stolenByAttacker;
+          aiCard.currentHp = aiCard.maxHp;
+        } else if (aiCard.forceSwitched) {
+          delete aiCard.forceSwitched;
+          aiCard.currentHp = aiCard.forceSwitchHp;
+          delete aiCard.forceSwitchHp;
+          activeBattle.aiDeck.push(aiCard);
+        } else {
+          activeBattle.aiGrave.unshift(aiCard);
+        }
         activeBattle.roundHistory.unshift(`💀 Enemy ${aiCard.name} fainted and moved to the AI graveyard pile!`);
 
         if (activeBattle.aiDeck.length > 0) {
@@ -8597,6 +9661,208 @@ Check your Browserslist config to be sure that your targets are set up correctly
       }
 
       // Turn moves to AI
+      await executeAiTurn();
+    }
+
+    function getTeamAttacks(card, requestedIndex) {
+      if (!card || card.currentHp <= 0 || !card.attacks.length) return null;
+      const attack = card.attacks[requestedIndex];
+      return attack && card.disabledAttackId !== attack.id ? requestedIndex : null;
+    }
+
+    function isAttackCoolingDown(card, attack) {
+      return attack.id === 'aksu_wheel_of_punishment' && (card.wheelCooldown || 0) > 0;
+    }
+
+    function renderTwoVsTwoControls(attackers, defenders, prefix, enabled, handler) {
+      const livingTargets = defenders
+        .map((card, slot) => card && card.currentHp > 0 ? { card, slot } : null)
+        .filter(Boolean);
+      if (!livingTargets.length) return '';
+      const attackerControls = attackers.map((card, slot) => {
+        if (!card || card.currentHp <= 0) return '';
+        const availableAttacks = card.attacks.filter(attack => card.disabledAttackId !== attack.id);
+        return `
+          <div class="rounded-xl border border-slate-700 bg-slate-950/80 p-3">
+            <h4 class="mb-2 text-xs font-black text-amber-200">${slot === 0 ? 'Active fighter' : 'Partner'}: ${escapeOnlineText(card.name)} · choose its move and target</h4>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Move
+                <select id="${prefix}-attack-${slot}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-xs text-white" ${!enabled || !availableAttacks.length ? 'disabled' : ''}>
+                  ${card.attacks.map((attack, index) => `<option value="${index}" ${card.disabledAttackId === attack.id ? 'disabled' : ''}>${escapeOnlineText(attack.name)}${attack.dmg > 0 ? ` · ${getCalculatedAttackDmg(card, attack)} DMG` : ''}${card.disabledAttackId === attack.id ? ' · locked' : ''}</option>`).join('')}
+                </select>
+              </label>
+              <label class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Target
+                <select id="${prefix}-target-${slot}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-xs text-white" ${!enabled ? 'disabled' : ''}>
+                  ${livingTargets.map(({ card: target, slot: targetSlot }) => `<option value="${targetSlot}">${targetSlot === 0 ? 'Active' : 'Partner'}: ${escapeOnlineText(target.name)} · ${target.currentHp}/${target.maxHp} HP</option>`).join('')}
+                </select>
+              </label>
+            </div>
+          </div>
+        `;
+      }).join('');
+      if (!attackerControls) return '';
+      const cannotAttack = attackers.every(card =>
+        !card || card.currentHp <= 0 || card.attacks.every(attack => card.disabledAttackId === attack.id)
+      );
+      return `
+        <div class="mx-auto mt-3 w-full max-w-2xl space-y-2 rounded-2xl border border-amber-500/30 bg-amber-950/20 p-3">
+          <h4 class="text-xs font-black uppercase tracking-wider text-amber-300">Choose both attacks</h4>
+          ${attackerControls}
+          <button onclick="${handler}()" ${!enabled || cannotAttack ? 'disabled' : ''} class="w-full rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-950 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40">Attack with selected moves</button>
+        </div>
+      `;
+    }
+
+    function executeTeamAttack(attacker, defender, attackIndex, isPlayer) {
+      if (!attacker || attacker.currentHp <= 0 || !defender || defender.currentHp <= 0 || attackIndex == null) return;
+      const playerLead = activeBattle.activePlayerCard;
+      const aiLead = activeBattle.activeAiCard;
+      const previousFieldCards = activeBattle.fieldCards;
+      activeBattle.fieldCards = [
+        playerLead,
+        activeBattle.playerPartnerCard,
+        aiLead,
+        activeBattle.aiPartnerCard
+      ].filter(Boolean);
+      activeBattle.activePlayerCard = attacker;
+      activeBattle.activeAiCard = defender;
+      try {
+        executeActionEffect(attacker, defender, attackIndex, isPlayer);
+      } finally {
+        activeBattle.activePlayerCard = playerLead;
+        activeBattle.activeAiCard = aiLead;
+        activeBattle.fieldCards = previousFieldCards;
+      }
+    }
+
+    function completeTwoVsTwoDeaths() {
+      const playerSlots = ['activePlayerCard', 'playerPartnerCard'];
+      const aiSlots = ['activeAiCard', 'aiPartnerCard'];
+      for (const slot of playerSlots) {
+        const card = activeBattle[slot];
+        if (card && card.currentHp <= 0) {
+          if (card.stolenByAttacker) {
+            delete card.stolenByAttacker;
+            card.currentHp = card.maxHp;
+          } else if (card.forceSwitched) {
+            delete card.forceSwitched;
+            card.currentHp = card.forceSwitchHp;
+            delete card.forceSwitchHp;
+            activeBattle.playerDeck.push(card);
+          } else {
+            activeBattle.playerGrave.unshift(card);
+            activeBattle.roundHistory.unshift(`💥 Your ${card.name} was defeated and moved to your left dead pile!`);
+          }
+          activeBattle[slot] = null;
+        }
+      }
+      for (const slot of aiSlots) {
+        const card = activeBattle[slot];
+        if (card && card.currentHp <= 0) {
+          if (card.stolenByAttacker) {
+            delete card.stolenByAttacker;
+            card.currentHp = card.maxHp;
+          } else if (card.forceSwitched) {
+            delete card.forceSwitched;
+            card.currentHp = card.forceSwitchHp;
+            delete card.forceSwitchHp;
+            activeBattle.aiDeck.push(card);
+          } else {
+            activeBattle.aiGrave.unshift(card);
+            activeBattle.roundHistory.unshift(`💀 Enemy ${card.name} fainted and moved to the AI graveyard pile!`);
+          }
+          activeBattle[slot] = null;
+        }
+      }
+      if (!activeBattle.activePlayerCard && activeBattle.playerPartnerCard) {
+        activeBattle.activePlayerCard = activeBattle.playerPartnerCard;
+        activeBattle.playerPartnerCard = null;
+      }
+      if (!activeBattle.activeAiCard && activeBattle.aiPartnerCard) {
+        activeBattle.activeAiCard = activeBattle.aiPartnerCard;
+        activeBattle.aiPartnerCard = null;
+      }
+
+      while (activeBattle.aiHand.length < 3 && activeBattle.aiDeck.length > 0) {
+        activeBattle.aiHand.push(activeBattle.aiDeck.shift());
+      }
+      for (const slot of aiSlots) {
+        if (!activeBattle[slot] && (activeBattle.aiHand.length || activeBattle.aiDeck.length)) {
+          activeBattle[slot] = activeBattle.aiHand.shift() || activeBattle.aiDeck.shift();
+          activeBattle.roundHistory.unshift(`⚠️ AI sent ${activeBattle[slot].name} to the battlefield.`);
+        }
+      }
+      while (activeBattle.playerHand.length < 3 && activeBattle.playerDeck.length > 0) {
+        activeBattle.playerHand.push(activeBattle.playerDeck.shift());
+      }
+      activeBattle.awaitingReplacement = playerSlots.some(slot => !activeBattle[slot]) &&
+        (activeBattle.playerHand.some(card => card.currentHp > 0) || activeBattle.playerDeck.length > 0);
+    }
+
+    function hasTwoVsTwoCards(slots, hand, deck) {
+      return slots.some(card => card && card.currentHp > 0) ||
+        hand.some(card => card.currentHp > 0) || deck.length > 0;
+    }
+
+    function executeTwoVsTwoRound(isPlayerTurn, chosenActions = null) {
+      const attackers = isPlayerTurn
+        ? [activeBattle.activePlayerCard, activeBattle.playerPartnerCard]
+        : [activeBattle.activeAiCard, activeBattle.aiPartnerCard];
+      const defenders = isPlayerTurn
+        ? [activeBattle.activeAiCard, activeBattle.aiPartnerCard]
+        : [activeBattle.activePlayerCard, activeBattle.playerPartnerCard];
+      attackers.forEach((attacker, lane) => {
+        if (!attacker || attacker.currentHp <= 0) return;
+        let action = chosenActions?.[lane];
+        if (!isPlayerTurn) {
+          const available = attacker.attacks
+            .map((attack, index) => ({ attack, index }))
+            .filter(({ attack }) => attacker.disabledAttackId !== attack.id);
+          if (!available.length) return;
+          action = {
+            attackIndex: available[Math.floor(Math.random() * available.length)].index,
+            targetSlot: defenders[0]?.currentHp > 0 && defenders[1]?.currentHp > 0
+              ? Math.floor(Math.random() * 2)
+              : defenders.findIndex(card => card && card.currentHp > 0)
+          };
+        }
+        const attackIndex = getTeamAttacks(attacker, action?.attackIndex);
+        const target = defenders[action?.targetSlot];
+        if (attackIndex == null || !target || target.currentHp <= 0) return;
+        executeTeamAttack(attacker, target, attackIndex, isPlayerTurn);
+      });
+      completeTwoVsTwoDeaths();
+    }
+
+    async function executeTwoVsTwoPlayerTurn(actions) {
+      if (!Array.isArray(actions)) return;
+      const attackers = [activeBattle.activePlayerCard, activeBattle.playerPartnerCard];
+      const defenders = [activeBattle.activeAiCard, activeBattle.aiPartnerCard];
+      for (let slot = 0; slot < attackers.length; slot++) {
+        const action = actions[slot];
+        const attacker = attackers[slot];
+        if (!attacker || attacker.currentHp <= 0) continue;
+        if (attacker.attacks.every(attack => attacker.disabledAttackId === attack.id)) continue;
+        if (!action || !Number.isInteger(action.attackIndex) || !Number.isInteger(action.targetSlot) ||
+            getTeamAttacks(attacker, action.attackIndex) == null ||
+            !defenders[action.targetSlot] || defenders[action.targetSlot].currentHp <= 0) return;
+      }
+      executeTwoVsTwoRound(true, actions);
+      const playerSlots = [activeBattle.activePlayerCard, activeBattle.playerPartnerCard];
+      const aiSlots = [activeBattle.activeAiCard, activeBattle.aiPartnerCard];
+      if (!hasTwoVsTwoCards(aiSlots, activeBattle.aiHand, activeBattle.aiDeck)) {
+        await finalizeBattle(true);
+        return;
+      }
+      if (!hasTwoVsTwoCards(playerSlots, activeBattle.playerHand, activeBattle.playerDeck)) {
+        await finalizeBattle(false);
+        return;
+      }
+      if (activeBattle.awaitingReplacement) {
+        activeBattle.roundHistory.unshift('👉 Choose a replacement fighter from your hand before the next turn.');
+        window.NorthernGoUI.refresh();
+        return;
+      }
       await executeAiTurn();
     }
 
@@ -8631,11 +9897,16 @@ Check your Browserslist config to be sure that your targets are set up correctly
       if (cardIndex === -1) return;
 
       const chosen = activeBattle.playerHand.splice(cardIndex, 1)[0];
-      activeBattle.activePlayerCard = chosen;
-      activeBattle.awaitingReplacement = false;
+      const replacementSlot = !activeBattle.activePlayerCard
+        ? 'activePlayerCard'
+        : activeBattle.gameMode === '2v2' && !activeBattle.playerPartnerCard
+          ? 'playerPartnerCard'
+          : null;
+      if (!replacementSlot) return;
+      activeBattle[replacementSlot] = chosen;
 
       // Draw replacement into hand from right-side deck pile if available
-      if (activeBattle.playerDeck.length > 0) {
+      while (activeBattle.playerHand.length < 3 && activeBattle.playerDeck.length > 0) {
         const drawn = activeBattle.playerDeck.shift();
         activeBattle.playerHand.push(drawn);
         activeBattle.roundHistory.unshift(
@@ -8646,6 +9917,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
       activeBattle.roundHistory.unshift(
         `🛡️ Sent ${chosen.name} onto the battlefield table!`
       );
+      activeBattle.awaitingReplacement = activeBattle.gameMode === '2v2' &&
+        (!activeBattle.activePlayerCard || !activeBattle.playerPartnerCard) &&
+        (activeBattle.playerHand.some(card => card.currentHp > 0) || activeBattle.playerDeck.length > 0);
 
       window.NorthernGoUI.refresh();
     }
@@ -8658,17 +9932,48 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
       setTimeout(async () => {
         if (!activeBattle || activeBattle.status === 'completed') return;
+        if (activeBattle.gameMode === '2v2') {
+          executeTwoVsTwoRound(false);
+          const playerSlots = [activeBattle.activePlayerCard, activeBattle.playerPartnerCard];
+          const aiSlots = [activeBattle.activeAiCard, activeBattle.aiPartnerCard];
+          if (!hasTwoVsTwoCards(playerSlots, activeBattle.playerHand, activeBattle.playerDeck)) {
+            await finalizeBattle(false);
+            return;
+          }
+          if (!hasTwoVsTwoCards(aiSlots, activeBattle.aiHand, activeBattle.aiDeck)) {
+            await finalizeBattle(true);
+            return;
+          }
+          activeBattle.isAiTurn = false;
+          window.NorthernGoUI.refresh();
+          return;
+        }
 
         const aiCard = activeBattle.activeAiCard;
         const pCard = activeBattle.activePlayerCard;
 
         if (aiCard && pCard && aiCard.currentHp > 0 && pCard.currentHp > 0) {
-          const attackChoice = Math.random() < 0.5 ? 0 : 1;
+          const availableAttacks = aiCard.attacks
+            .map((attack, index) => ({ attack, index }))
+            .filter(({ attack }) => aiCard.disabledAttackId !== attack.id && !isAttackCoolingDown(aiCard, attack));
+          const attackChoice = availableAttacks.length
+            ? availableAttacks[Math.floor(Math.random() * availableAttacks.length)].index
+            : 0;
           executeActionEffect(aiCard, pCard, attackChoice, false);
 
           // Check if AI died from self-inflicted action (e.g. useless or Jalapeno poison)
           if (aiCard.currentHp <= 0) {
-            activeBattle.aiGrave.unshift(aiCard);
+            if (aiCard.stolenByAttacker) {
+              delete aiCard.stolenByAttacker;
+              aiCard.currentHp = aiCard.maxHp;
+            } else if (aiCard.forceSwitched) {
+              delete aiCard.forceSwitched;
+              aiCard.currentHp = aiCard.forceSwitchHp;
+              delete aiCard.forceSwitchHp;
+              activeBattle.aiDeck.push(aiCard);
+            } else {
+              activeBattle.aiGrave.unshift(aiCard);
+            }
             activeBattle.roundHistory.unshift(`💀 Enemy ${aiCard.name} fainted!`);
 
             if (activeBattle.aiDeck.length > 0) {
@@ -8682,7 +9987,17 @@ Check your Browserslist config to be sure that your targets are set up correctly
 
           // Check if Player Card died
           if (pCard.currentHp <= 0) {
-            activeBattle.playerGrave.unshift(pCard);
+            if (pCard.stolenByAttacker) {
+              delete pCard.stolenByAttacker;
+              pCard.currentHp = pCard.maxHp;
+            } else if (pCard.forceSwitched) {
+              delete pCard.forceSwitched;
+              pCard.currentHp = pCard.forceSwitchHp;
+              delete pCard.forceSwitchHp;
+              activeBattle.playerHand.push(pCard);
+            } else {
+              activeBattle.playerGrave.unshift(pCard);
+            }
             activeBattle.activePlayerCard = null;
             activeBattle.roundHistory.unshift(`💥 Your ${pCard.name} was defeated and discarded to your left dead pile!`);
 
@@ -8712,10 +10027,12 @@ Check your Browserslist config to be sure that your targets are set up correctly
         const reward = activeBattle.config.coinReward;
         userCoins += reward;
         activeBattle.roundHistory.unshift(`🎉 VICTORY! Earned +${reward} Coins.`);
-      } else {
+      } else if (activeBattle.difficulty === 'easy') {
         const pity = Math.floor(activeBattle.config.coinReward * 0.15);
         userCoins += pity;
         activeBattle.roundHistory.unshift(`💀 DEFEAT! Consolation reward: +${pity} Coins.`);
+      } else {
+        activeBattle.roundHistory.unshift('💀 DEFEAT! No Coins earned.');
       }
 
       await syncPlayerProfile();
@@ -8762,6 +10079,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
         if (!userLoggedIn) return renderAuthModal();
 
         const allFlipped = openedPackCards.length === 5 && openedPackCards.every(Boolean);
+        const isIconPack = currentPack.length === 1 && currentPack[0]?.rarity === 'ICON';
 
         return `
           <main class="max-w-6xl mx-auto p-4 sm:p-6 pb-28">
@@ -8799,19 +10117,19 @@ Check your Browserslist config to be sure that your targets are set up correctly
                     ${Math.max(0, FREE_PACKS_LIMIT - totalPacksOpened) > 0 ? 'FREE' : `${PACK_PRICE} Coins`}
                   </div>
                 </div>
-                <span class="text-xs text-slate-400">5 Cards / Pack</span>
+                <span class="text-xs text-slate-400">5 normally · 1 icon</span>
               </div>
             </div>
 
             <!-- Header banner -->
             <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 mb-6 backdrop-blur shadow-lg">
               <div>
-                <span class="text-xs uppercase font-extrabold tracking-widest text-amber-500">Booster Simulator</span>
+                <span class="text-xs uppercase font-extrabold tracking-widest text-amber-500">Booster Simulator · 1% Icon Pack Chance</span>
                 <h2 class="text-2xl font-black text-white flex items-center gap-2">
-                  <span>Standard 5-Card Booster</span>
+                <span>Standard Booster Pack</span>
                   <span class="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full">Edition 1</span>
                 </h2>
-                <p class="text-xs text-slate-400 mt-0.5">Cards 1-4 standard odds • Card 5 shifted rightward!</p>
+                <p class="text-xs text-slate-400 mt-0.5">5 cards normally, or 1 white icon card with a 1% chance.</p>
               </div>
 
               <div class="flex items-center gap-2 w-full sm:w-auto">
@@ -8820,7 +10138,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
                   <span>✨</span>
                   <span>${currentPack.length ? (Math.max(0, FREE_PACKS_LIMIT - totalPacksOpened) > 0 ? 'Open Another (Free)' : `Buy Another (${PACK_PRICE}🪙)`) : (Math.max(0, FREE_PACKS_LIMIT - totalPacksOpened) > 0 ? 'Rip Free Pack' : `Buy Pack (${PACK_PRICE}🪙)`)}</span>
                 </button>
-                ${currentPack.length && !allFlipped ? `
+                ${currentPack.length === 5 && !allFlipped ? `
                   <button onclick="revealAllCards()" class="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider border border-slate-700">
                     Flip All
                   </button>
@@ -8836,12 +10154,16 @@ Check your Browserslist config to be sure that your targets are set up correctly
                 </div>
                 <h3 class="text-xl font-bold text-white mb-2">Ready to Rip Your First Pack?</h3>
                 <p class="text-slate-400 text-sm max-w-md mx-auto mb-6">
-                  Every pack holds 5 collectible cards. The 5th slot slides odds rightward to supercharge your high-rarity pull chances!
+                  Standard packs hold 5 cards, with shifted odds in slot 5. Each pack also has a 1% chance to be a single collectible icon card.
                 </p>
                 <button onclick="openNewPack()" 
                   class="px-8 py-3.5 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black rounded-2xl shadow-xl text-sm uppercase tracking-wider">
-                  Open 5-Card Pack Now
+                  Open a Booster Pack
                 </button>
+              </div>
+            ` : isIconPack ? `
+              <div class="my-10">
+                ${renderIconPackCard(currentPack[0])}
               </div>
             ` : `
               <div class="mb-4 flex items-center justify-between">
@@ -8913,7 +10235,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
                         <span class="text-yellow-400 font-bold">Gold (Legendary)</span>
                       </td>
                       <td class="py-2.5 px-3 text-slate-300">4%</td>
-                      <td class="py-2.5 px-3 bg-amber-500/5 text-yellow-300 font-bold">10%</td>
+                      <td class="py-2.5 px-3 bg-amber-500/5 text-yellow-300 font-bold">13%</td>
                       <td class="py-2.5 px-3 text-slate-400">${statsCollection.gold || 0}</td>
                     </tr>
                     <tr class="hover:bg-slate-800/20">
@@ -8921,9 +10243,18 @@ Check your Browserslist config to be sure that your targets are set up correctly
                         <span class="w-2.5 h-2.5 rounded-full bg-fuchsia-500 animate-ping"></span>
                         <span class="text-fuchsia-400 font-black">Black (Mythic Secret)</span>
                       </td>
-                      <td class="py-2.5 px-3 text-fuchsia-300 font-bold">1%</td>
-                      <td class="py-2.5 px-3 bg-amber-500/5 text-fuchsia-300 font-black">4%</td>
+                      <td class="py-2.5 px-3 text-fuchsia-300 font-bold">0.99%</td>
+                      <td class="py-2.5 px-3 bg-amber-500/5 text-fuchsia-300 font-black">0.99%</td>
                       <td class="py-2.5 px-3 text-slate-400">${statsCollection.black || 0}</td>
+                    </tr>
+                    <tr class="hover:bg-slate-800/20">
+                      <td class="py-2.5 px-3 flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full rainbow-card-bg"></span>
+                        <span class="font-black rainbow-card-badge bg-clip-text text-transparent">Rainbow (Ultra Secret)</span>
+                      </td>
+                      <td class="py-2.5 px-3 text-white font-bold">0.01%</td>
+                      <td class="py-2.5 px-3 bg-amber-500/5 text-white font-black">0.01%</td>
+                      <td class="py-2.5 px-3 text-slate-400">${statsCollection.rainbow || 0}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -8942,7 +10273,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
         if (!userLoggedIn) return renderAuthModal();
 
         const searchLower = (binderSearch || '').toLowerCase().trim();
-        const rarityOrder = ['GREY', 'GREEN', 'BLUE', 'PURPLE', 'GOLD', 'BLACK'];
+        const rarityOrder = ['GREY', 'GREEN', 'BLUE', 'PURPLE', 'GOLD', 'BLACK', 'RAINBOW', 'ICON'];
         const groupedCards = new Map();
         (allCards || []).forEach(card => {
           if (!card) return;
@@ -8972,7 +10303,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
                     ${(allCards || []).length} Total Copies
                   </span>
                 </h2>
-                <p class="text-xs text-slate-400 mt-0.5">Browse one rarity at a time. Matching duplicates are grouped together.</p>
+                <p class="text-xs text-slate-400 mt-0.5">Browse cards by category. Matching duplicates are grouped together.</p>
               </div>
 
               <!-- Search Bar -->
@@ -9007,12 +10338,13 @@ Check your Browserslist config to be sure that your targets are set up correctly
               <div class="text-center py-20 bg-slate-900/30 border border-slate-800 rounded-2xl">
                 <span class="text-4xl block mb-2">${searchLower ? '🔍' : '🎴'}</span>
                 <p class="text-slate-400 font-semibold text-sm">${searchLower ? 'No cards matched your search.' : `No ${RARITIES[binderFilter].name.toLowerCase()} cards yet.`}</p>
-                <p class="text-slate-500 text-xs mt-1">${searchLower ? 'Try another card name or type.' : 'Open booster packs to collect cards of this rarity.'}</p>
+                <p class="text-slate-500 text-xs mt-1">${searchLower ? 'Try another card name or type.' : 'Open booster packs to collect cards in this category.'}</p>
               </div>
             ` : `
               <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 ${filteredCards.map(({ card: c, count }) => {
                   const rData = RARITIES[c.rarity] || RARITIES.GREY;
+                  const isIconCard = c.rarity === 'ICON';
                   return `
                     <div class="rounded-2xl border-2 ${rData.borderClass} ${rData.bgClass} p-3.5 flex flex-col justify-between aspect-[5/7] ${rData.glow} relative group transition-transform hover:-translate-y-1 shadow-lg">
                       ${count > 1 ? `<span aria-label="${count} copies" title="${count} copies" class="absolute top-2 right-2 z-20 min-w-7 h-7 px-1 rounded-full bg-amber-400 text-slate-950 border-2 border-slate-950 flex items-center justify-center text-xs font-black shadow-lg">×${count}</span>` : ''}
@@ -9020,20 +10352,20 @@ Check your Browserslist config to be sure that your targets are set up correctly
                         <span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${rData.badge}">
                           ${rData.tier}
                         </span>
-                        <span class="text-xs font-black text-amber-300">⚔️ ${c.power}</span>
+                        <span class="text-xs font-black ${isIconCard ? 'text-slate-950' : 'text-amber-300'}">⚔️ ${c.power}</span>
                       </div>
 
                       <div class="text-center my-auto">
                         ${renderCardArtwork(c, 'w-full h-36 mb-2')}
-                        <h4 class="font-bold text-xs text-white leading-tight truncate px-1">${c.name}</h4>
-                        <span class="text-[9px] text-slate-300 font-semibold block">${c.type}</span>
+                        <h4 class="font-bold text-xs ${isIconCard ? 'text-slate-950' : 'text-white'} leading-tight truncate px-1">${c.name}</h4>
+                        <span class="text-[9px] ${isIconCard ? 'text-slate-700' : 'text-slate-300'} font-semibold block">${c.type}</span>
                       </div>
 
-                      <div class="bg-black/50 p-1.5 rounded-lg border border-white/5 text-[9px] text-slate-400 leading-tight">
+                      <div class="${isIconCard ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-black/50 border-white/5 text-slate-400'} p-1.5 rounded-lg border text-[9px] leading-tight">
                         <p class="italic line-clamp-2">${c.description}</p>
-                        <div class="flex items-center justify-between mt-1 text-[7px] border-t border-white/10 pt-0.5">
+                        <div class="flex items-center justify-between mt-1 text-[7px] border-t ${isIconCard ? 'border-slate-300' : 'border-white/10'} pt-0.5">
                           <span>${c.serialNumber || 'SN-00'}</span>
-                          <span class="font-bold uppercase text-amber-400">${c.rarity}</span>
+                          <span class="font-bold uppercase ${isIconCard ? 'text-slate-950' : 'text-amber-400'}">${c.rarity}</span>
                         </div>
                       </div>
                     </div>
@@ -9060,11 +10392,11 @@ Check your Browserslist config to be sure that your targets are set up correctly
           <main class="max-w-4xl mx-auto p-4 sm:p-6 pb-28 space-y-6">
             <div>
               <h2 class="text-2xl font-black text-white">Collector Analytics</h2>
-              <p class="text-xs text-slate-400 mt-0.5">Historical pack pulls and rare card breakdown.</p>
+              <p class="text-xs text-slate-400 mt-0.5">Pack history and card collection breakdown.</p>
             </div>
 
             <!-- Key metrics -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div class="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
                 <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Packs Opened</span>
                 <span class="text-3xl font-black text-amber-400">${totalPacks}</span>
@@ -9077,11 +10409,15 @@ Check your Browserslist config to be sure that your targets are set up correctly
                 <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Mythic Secrets (Black)</span>
                 <span class="text-3xl font-black text-fuchsia-400">${statsCollection.black || 0}</span>
               </div>
+              <div class="p-4 bg-slate-900 border border-slate-800 rounded-2xl col-span-2 sm:col-span-1">
+                <span class="text-[11px] font-bold rainbow-card-badge bg-clip-text text-transparent uppercase tracking-wider block mb-1">Ultra Secrets (Rainbow)</span>
+                <span class="text-3xl font-black text-white">${statsCollection.rainbow || 0}</span>
+              </div>
             </div>
 
             <!-- Distribution Breakdown -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-              <h3 class="text-sm font-black text-white uppercase tracking-wider mb-4">Vault Rarity Distribution</h3>
+              <h3 class="text-sm font-black text-white uppercase tracking-wider mb-4">Vault Card Distribution</h3>
               <div class="space-y-3">
                 ${[
                   { name: 'Grey (Common)', count: statsCollection.grey, color: 'bg-slate-400', pctColor: 'text-slate-400' },
@@ -9089,7 +10425,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
                   { name: 'Blue (Rare)', count: statsCollection.blue, color: 'bg-blue-500', pctColor: 'text-blue-400' },
                   { name: 'Purple (Epic)', count: statsCollection.purple, color: 'bg-purple-500', pctColor: 'text-purple-400' },
                   { name: 'Gold (Legendary)', count: statsCollection.gold, color: 'bg-yellow-400', pctColor: 'text-yellow-400' },
-                  { name: 'Black (Mythic)', count: statsCollection.black, color: 'bg-fuchsia-500', pctColor: 'text-fuchsia-400' }
+                  { name: 'Black (Mythic)', count: statsCollection.black, color: 'bg-fuchsia-500', pctColor: 'text-fuchsia-400' },
+                  { name: 'Rainbow (Ultra Secret)', count: statsCollection.rainbow, color: 'rainbow-card-bg', pctColor: 'text-white' },
+                  { name: 'Icons (White)', count: statsCollection.icon, color: 'bg-white', pctColor: 'text-white' }
                 ].map(r => {
                   const pct = totalCardCount > 0 ? ((r.count / totalCardCount) * 100).toFixed(1) : 0;
                   return `
@@ -9167,7 +10505,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
         const totalPower = deckCards.reduce((acc, c) => acc + (c.power || 0), 0);
         const avgPower = deckCount > 0 ? Math.round(totalPower / deckCount) : 0;
         const isLegal = deckCount >= 10 && deckCount <= 30;
-        const rarityOrder = ['GREY', 'GREEN', 'BLUE', 'PURPLE', 'GOLD', 'BLACK'];
+        const rarityOrder = ['GREY', 'GREEN', 'BLUE', 'PURPLE', 'GOLD', 'BLACK', 'RAINBOW', 'ICON'];
         const searchLower = deckSearch.trim().toLowerCase();
         const groupedCards = new Map();
         (allCards || []).forEach(card => {
@@ -9202,7 +10540,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
                       ${deckCount} / 30 Cards (Min: 10)
                     </span>
                   </h2>
-                  <p class="text-xs text-slate-400 mt-0.5">Browse your collection by rarity, like the binder. Add or remove individual copies.</p>
+                  <p class="text-xs text-slate-400 mt-0.5">Browse your collection by category, like the binder. Add or remove individual copies.</p>
                 </div>
 
                 <div class="flex items-center gap-2 w-full md:w-auto">
@@ -9289,34 +10627,35 @@ Check your Browserslist config to be sure that your targets are set up correctly
               <div class="text-center py-20 bg-slate-900/30 border border-slate-800 rounded-2xl">
                 <span class="text-4xl block mb-2">${searchLower ? '🔍' : '🎴'}</span>
                 <p class="text-slate-400 font-semibold text-sm">${searchLower ? 'No cards matched your search.' : `No ${RARITIES[deckFilter].name.toLowerCase()} cards yet.`}</p>
-                <p class="text-slate-500 text-xs mt-1">${searchLower ? 'Try another card name or type.' : 'Open booster packs to collect cards of this rarity.'}</p>
+                <p class="text-slate-500 text-xs mt-1">${searchLower ? 'Try another card name or type.' : 'Open booster packs to collect cards in this category.'}</p>
               </div>
             ` : `
               <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 ${selectedCards.map(({ card, cards, rarity, selectedCount, name }) => {
                   const rData = RARITIES[rarity] || RARITIES.GREY;
+                  const isIconCard = rarity === 'ICON';
                   const encodedName = encodeURIComponent(name).replace(/'/g, '%27');
                   return `
-                    <div class="relative rounded-2xl border-2 ${rData.borderClass} ${selectedCount ? rData.bgClass + ' ring-2 ring-amber-400' : 'bg-slate-900/70'} p-3.5 flex flex-col justify-between aspect-[5/7] ${selectedCount ? rData.glow : ''} shadow-lg transition-transform hover:-translate-y-1">
+                    <div class="relative rounded-2xl border-2 ${rData.borderClass} ${selectedCount ? rData.bgClass + ' ring-2 ring-amber-400' : (isIconCard ? rData.bgClass : 'bg-slate-900/70')} p-3.5 flex flex-col justify-between aspect-[5/7] ${selectedCount ? rData.glow : ''} shadow-lg transition-transform hover:-translate-y-1">
                       ${cards.length > 1 ? `<span aria-label="${cards.length} copies" title="${cards.length} copies" class="absolute top-2 right-2 z-20 min-w-7 h-7 px-1 rounded-full bg-amber-400 text-slate-950 border-2 border-slate-950 flex items-center justify-center text-xs font-black shadow-lg">×${cards.length}</span>` : ''}
                       <div class="flex items-center justify-between gap-1">
                         <span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${rData.badge}">
                           ${rData.tier}
                         </span>
-                          <span class="text-xs font-black text-amber-300">⚔️ ${card.power}</span>
+                          <span class="text-xs font-black ${isIconCard ? 'text-slate-950' : 'text-amber-300'}">⚔️ ${card.power}</span>
                       </div>
 
                       <div class="text-center my-auto">
                         ${renderCardArtwork(card, 'w-full h-36 mb-2')}
-                        <h4 class="font-bold text-xs text-white leading-tight truncate px-1">${name}</h4>
-                        <span class="text-[9px] text-slate-300 font-semibold block">${card.type}</span>
+                        <h4 class="font-bold text-xs ${isIconCard ? 'text-slate-950' : 'text-white'} leading-tight truncate px-1">${name}</h4>
+                        <span class="text-[9px] ${isIconCard ? 'text-slate-700' : 'text-slate-300'} font-semibold block">${card.type}</span>
                       </div>
 
-                      <div class="bg-black/50 p-1.5 rounded-lg border border-white/5 text-[9px] text-slate-400 leading-tight">
+                      <div class="${isIconCard ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-black/50 border-white/5 text-slate-400'} p-1.5 rounded-lg border text-[9px] leading-tight">
                         <p class="italic line-clamp-2">${card.description || ''}</p>
-                        <div class="flex items-center justify-between mt-1 text-[7px] border-t border-white/10 pt-0.5">
+                        <div class="flex items-center justify-between mt-1 text-[7px] border-t ${isIconCard ? 'border-slate-300' : 'border-white/10'} pt-0.5">
                           <span>${card.serialNumber || 'SN-00'}</span>
-                          <span class="font-bold uppercase text-amber-400">${rarity}</span>
+                          <span class="font-bold uppercase ${isIconCard ? 'text-slate-950' : 'text-amber-400'}">${rarity}</span>
                         </div>
                       </div>
 
@@ -9334,6 +10673,44 @@ Check your Browserslist config to be sure that your targets are set up correctly
         `;
       }
     });
+
+    function renderCompactTeamCard(card, label, isOwn) {
+      if (!card) {
+        return `<div class="flex min-h-40 items-center justify-center rounded-2xl border-2 border-dashed ${isOwn ? 'border-amber-500/40 text-amber-300/60' : 'border-rose-500/40 text-rose-300/60'} bg-slate-950/70 text-xs font-bold">${label} slot empty</div>`;
+      }
+      const palette = isOwn
+        ? { border: 'border-amber-500/70', label: 'border-amber-500/40 bg-amber-500/15 text-amber-200', hp: 'text-amber-300', frame: 'border-amber-500/40', bar: 'bg-amber-500' }
+        : { border: 'border-rose-500/70', label: 'border-rose-500/40 bg-rose-500/15 text-rose-200', hp: 'text-rose-300', frame: 'border-rose-500/40', bar: 'bg-rose-500' };
+      return `
+        <article class="min-w-0 rounded-2xl border-2 ${palette.border} bg-slate-950/95 p-3 shadow-lg">
+          <header class="mb-2 flex flex-wrap items-center justify-between gap-1">
+            <span class="rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${palette.label}">${label}</span>
+            <span class="text-[10px] font-black ${palette.hp}">${card.currentHp} / ${card.maxHp} HP</span>
+          </header>
+          <div class="flex items-center gap-2">
+            <div class="relative h-16 w-14 shrink-0 overflow-hidden rounded-lg border ${palette.frame} bg-black/70">
+              ${renderCardArtwork(card, 'h-full w-full')}
+              <span class="absolute inset-x-0 bottom-0 bg-black/70 text-center text-[7px] font-black uppercase text-amber-300">${escapeOnlineText(card.rarity)}</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <h4 class="truncate text-sm font-black text-white">${escapeOnlineText(card.name)}</h4>
+              <span class="text-[9px] uppercase text-slate-400">${escapeOnlineText(card.type)}</span>
+              <div class="mt-1 h-2 overflow-hidden rounded-full bg-slate-800">
+                <div class="h-full ${palette.bar}" style="width:${Math.max(0, Math.min(100, card.currentHp / card.maxHp * 100))}%"></div>
+              </div>
+            </div>
+          </div>
+          ${(card.isImmune || card.stunned) ? `<div class="mt-2 flex gap-1">${card.isImmune ? '<span class="rounded bg-amber-400 px-1.5 py-0.5 text-[9px] font-bold text-slate-950">🛡️ IMMUNE</span>' : ''}${card.stunned ? '<span class="rounded bg-purple-500 px-1.5 py-0.5 text-[9px] font-bold text-white">💫 STUNNED</span>' : ''}</div>` : ''}
+          <div class="mt-2 space-y-1 rounded-xl border border-white/10 bg-black/50 p-2">
+            ${card.attacks.map(attack => {
+              const damage = getCalculatedAttackDmg(card, attack);
+              const disabled = card.disabledAttackId === attack.id;
+              return `<div class="border-b border-white/5 pb-1 text-[10px] last:border-0 last:pb-0 ${disabled ? 'opacity-50' : ''}"><div class="flex justify-between gap-1 font-bold text-slate-200"><span class="truncate">${escapeOnlineText(attack.name)}</span>${damage > 0 ? `<span class="shrink-0 text-rose-300">${damage} DMG</span>` : ''}</div>${disabled ? `<span class="text-[8px] text-rose-300">Locked ${card.disabledTurnsLeft} turns</span>` : ''}</div>`;
+            }).join('')}
+          </div>
+        </article>
+      `;
+    }
 
     // 3. AI Arena / Battle View: Physical Card Table with Left Graveyard, Right Draw Deck, 10 Random Cards & Replacement Picking
     window.NorthernGoUI.view('battle', {
@@ -9396,6 +10773,17 @@ Check your Browserslist config to be sure that your targets are set up correctly
                   </div>
                 `}
 
+                <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                  <h3 class="text-sm font-black uppercase tracking-wider text-white">Battle format</h3>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    ${['1v1', '2v2'].map(mode => `
+                      <button type="button" onclick="setBattleMode('${mode}')" aria-pressed="${selectedBattleMode === mode}"
+                        class="rounded-xl border px-4 py-2 text-xs font-black ${selectedBattleMode === mode ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-700 bg-slate-950 text-slate-300'}">${mode}</button>
+                    `).join('')}
+                  </div>
+                  <p class="mt-2 text-xs text-slate-400">${selectedBattleMode === '2v2' ? 'Control both fighters: choose a move and target for each attack every turn.' : 'One fighter on each side battles at a time.'}</p>
+                </div>
+
                 <div>
                   <h3 class="text-sm font-black text-white uppercase tracking-wider mb-3">Choose AI Opponent</h3>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -9445,7 +10833,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
                     <p class="text-xs mb-4">
                       ${activeBattle.winner === 'player'
                         ? `You swept the table against ${activeBattle.config.name}! Received +${activeBattle.config.coinReward} Coins!`
-                        : `Your 10 random squad cards were overcome. Consolation prize: +${Math.floor(activeBattle.config.coinReward * 0.15)} Coins.`}
+                        : activeBattle.difficulty === 'easy'
+                          ? `Your cards were overcome. Consolation prize: +${Math.floor(activeBattle.config.coinReward * 0.15)} Coins.`
+                          : 'Your cards were overcome. No Coins earned on this difficulty.'}
                     </p>
 
                     <div class="flex flex-wrap items-center justify-center gap-3">
@@ -9532,9 +10922,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
                     <div class="col-span-12 sm:col-span-6 flex flex-col gap-4 py-2">
                       
                       <!-- AI Active Card on Table -->
-                      <div class="flex items-center justify-center">
+                      <div class="grid grid-cols-1 ${activeBattle.gameMode === '2v2' ? 'sm:grid-cols-2' : ''} items-start gap-2">
                         ${activeBattle.activeAiCard ? `
-                          <div class="w-full max-w-md bg-slate-950/95 border-2 border-rose-500/80 rounded-2xl p-4 shadow-[0_8px_25px_rgba(244,63,94,0.25)] relative">
+                          <div class="w-full max-w-md bg-slate-950/95 border-2 border-rose-500/80 rounded-2xl p-4 shadow-[0_8px_25px_rgba(244,63,94,0.25)] relative ${activeBattle.gameMode === '2v2' ? 'hidden' : ''}">
                             <!-- Card Header -->
                             <div class="flex items-center justify-between mb-2">
                               <div class="flex items-center gap-1.5">
@@ -9609,6 +10999,12 @@ Check your Browserslist config to be sure that your targets are set up correctly
                             AI Card Zone Empty
                           </div>
                         `}
+                        ${activeBattle.gameMode === '2v2'
+                          ? renderCompactTeamCard(activeBattle.activeAiCard, 'AI active', false)
+                          : ''}
+                        ${activeBattle.gameMode === '2v2' && activeBattle.aiPartnerCard
+                          ? renderCompactTeamCard(activeBattle.aiPartnerCard, 'AI partner', false)
+                          : ''}
                       </div>
 
                       <!-- Turn status indicator badge in center line -->
@@ -9622,9 +11018,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
                       </div>
 
                       <!-- Player Active Card on Table -->
-                      <div class="flex items-center justify-center">
+                      <div class="grid grid-cols-1 ${activeBattle.gameMode === '2v2' ? 'sm:grid-cols-2' : ''} items-start gap-2">
                         ${activeBattle.activePlayerCard ? `
-                          <div class="w-full max-w-md bg-slate-950/95 border-2 border-amber-400 rounded-2xl p-4 shadow-[0_8px_25px_rgba(234,179,8,0.25)] relative">
+                          <div class="w-full max-w-md bg-slate-950/95 border-2 border-amber-400 rounded-2xl p-4 shadow-[0_8px_25px_rgba(234,179,8,0.25)] relative ${activeBattle.gameMode === '2v2' ? 'hidden' : ''}">
                             <!-- Card Header -->
                             <div class="flex items-center justify-between mb-2">
                               <div class="flex items-center gap-1.5">
@@ -9674,19 +11070,20 @@ Check your Browserslist config to be sure that your targets are set up correctly
                             </div>
 
                             <!-- Fully readable Attack Action Buttons -->
-                            ${activeBattle.status !== 'completed' && !activeBattle.awaitingReplacement ? `
+                            ${activeBattle.gameMode !== '2v2' && activeBattle.status !== 'completed' && !activeBattle.awaitingReplacement ? `
                               <div class="space-y-2 pt-2 border-t border-slate-800">
                                 <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Select Attack / Ability:</span>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                   ${activeBattle.activePlayerCard.attacks.map((atk, idx) => {
                                     const isDisabled = activeBattle.activePlayerCard.disabledAttackId === atk.id;
+                                    const isCoolingDown = isAttackCoolingDown(activeBattle.activePlayerCard, atk);
                                     const calcDmg = getCalculatedAttackDmg(activeBattle.activePlayerCard, atk);
                                     const isSmeggeBoosted = atk.id === 'smegge' && activeBattle.activePlayerCard.smeggeMultiplier > 1;
 
                                     return `
-                                      <button onclick="playerExecuteAttack(${idx})" ${activeBattle.isAiTurn || isDisabled ? 'disabled' : ''}
+                                      <button onclick="playerExecuteAttack(${idx})" ${activeBattle.isAiTurn || isDisabled || isCoolingDown ? 'disabled' : ''}
                                         class="p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
-                                          isDisabled
+                                          isDisabled || isCoolingDown
                                             ? 'bg-rose-950/40 border-rose-800 text-rose-300 cursor-not-allowed opacity-60'
                                             : activeBattle.isAiTurn 
                                               ? 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed' 
@@ -9715,6 +11112,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
                                           <span class="mt-1 text-[9px] font-bold text-rose-400 bg-rose-950 px-1 py-0.5 rounded self-start">
                                             🚫 Locked for ${activeBattle.activePlayerCard.disabledTurnsLeft} turns
                                           </span>
+                                        ` : isCoolingDown ? `
+                                          <span class="mt-1 text-[9px] font-bold text-rose-400 bg-rose-950 px-1 py-0.5 rounded self-start">
+                                            ⏳ Cooldown: ${activeBattle.activePlayerCard.wheelCooldown} turns
+                                          </span>
                                         ` : ''}
                                       </button>
                                     `;
@@ -9730,6 +11131,19 @@ Check your Browserslist config to be sure that your targets are set up correctly
                             <span class="text-[10px] text-slate-300">Click a card from your 3-card hand below to send it into combat!</span>
                           </div>
                         `}
+                        ${activeBattle.gameMode === '2v2'
+                          ? renderCompactTeamCard(activeBattle.activePlayerCard, 'Your active fighter', true)
+                          : ''}
+                        ${activeBattle.gameMode === '2v2' && activeBattle.playerPartnerCard
+                          ? renderCompactTeamCard(activeBattle.playerPartnerCard, 'Your partner', true)
+                          : ''}
+                        ${activeBattle.gameMode === '2v2' ? renderTwoVsTwoControls(
+                          [activeBattle.activePlayerCard, activeBattle.playerPartnerCard],
+                          [activeBattle.activeAiCard, activeBattle.aiPartnerCard],
+                          'ai-battle',
+                          !activeBattle.isAiTurn && !activeBattle.awaitingReplacement && activeBattle.status !== 'completed',
+                          'playerExecuteTwoVsTwoTurn'
+                        ) : ''}
                       </div>
 
                     </div>
@@ -9961,6 +11375,17 @@ Check your Browserslist config to be sure that your targets are set up correctly
               </div>
             `}
             <section class="space-y-4">
+              <div class="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                <h3 class="text-sm font-black uppercase tracking-wider text-white">Battle format</h3>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  ${['1v1', '2v2'].map(mode => `
+                    <button type="button" onclick="setOnlineBattleMode('${mode}')" ${onlineMatch ? 'disabled' : ''}
+                      aria-pressed="${selectedOnlineMode === mode}"
+                      class="rounded-xl border px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-50 ${selectedOnlineMode === mode ? 'border-emerald-400 bg-emerald-400 text-slate-950' : 'border-slate-700 bg-slate-950 text-slate-300'}">${mode}</button>
+                  `).join('')}
+                </div>
+                <p class="mt-2 text-xs text-slate-400">${selectedOnlineMode === '2v2' ? 'Control both fighters: choose a move and target for each attack every turn. Both players choose their own replacements.' : 'One fighter on each side battles at a time. Each player chooses their own replacements.'}</p>
+              </div>
               <div>
                 <h3 class="text-sm font-black text-white uppercase tracking-wider">Choose how to join the table</h3>
                 <p class="text-xs text-slate-400 mt-1">Both players exchange connection codes privately. Direct connections can be blocked by some routers or firewalls.</p>
@@ -10013,7 +11438,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
                 ${row.status === 'waiting' ? `
                   <div class="relative min-h-[380px] overflow-hidden rounded-3xl border-4 border-amber-900/60 p-6 flex flex-col items-center justify-center text-center shadow-2xl" style="background:radial-gradient(circle,#0e2a1e 0%,#061912 65%,#030c08 100%);box-shadow:inset 0 0 80px rgba(0,0,0,.8),0 10px 30px rgba(0,0,0,.7)">
                     <span class="text-5xl mb-4">🎴</span>
-                    <h4 class="text-2xl font-black text-white">Your 1v1 table is ready</h4>
+                    <h4 class="text-2xl font-black text-white">Your ${row.game_mode || selectedOnlineMode} table is ready</h4>
                     <p class="mt-2 max-w-lg text-sm text-amber-100">Exchange the offer and answer codes above. Once the direct connection opens, both players’ cards will be dealt onto this table.</p>
                     <div class="mt-6 flex flex-wrap justify-center gap-3">
                       <span class="rounded-xl border border-rose-400/30 bg-rose-950/50 px-4 py-2 text-sm font-bold text-rose-200">${escapeOnlineText(row.host_name || 'Host')} • waiting</span>
@@ -10047,9 +11472,9 @@ Check your Browserslist config to be sure that your targets are set up correctly
                           { side: opponent, own: false },
                           { side: own, own: true }
                         ].map(({ side, own: isOwn }) => `
-                          <div class="flex justify-center">
+                          <div class="grid grid-cols-1 gap-2 ${state.gameMode === '2v2' ? 'sm:grid-cols-2' : ''}">
                             ${side?.active ? `
-                              <div class="relative w-full max-w-2xl rounded-2xl border-2 ${isOwn ? 'border-amber-400 shadow-[0_8px_25px_rgba(234,179,8,.25)]' : 'border-rose-500/80 shadow-[0_8px_25px_rgba(244,63,94,.25)]'} bg-slate-950/95 p-3 sm:p-4">
+                              <div class="relative w-full max-w-2xl rounded-2xl border-2 ${isOwn ? 'border-amber-400 shadow-[0_8px_25px_rgba(234,179,8,.25)]' : 'border-rose-500/80 shadow-[0_8px_25px_rgba(244,63,94,.25)]'} bg-slate-950/95 p-3 sm:p-4 ${state.gameMode === '2v2' ? 'hidden' : ''}">
                                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
                                   <div class="flex flex-wrap items-center gap-1.5">
                                     <span class="rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${isOwn ? 'border-amber-500/40 bg-amber-500/20 text-amber-200' : 'border-rose-500/40 bg-rose-500/20 text-rose-200'}">${escapeOnlineText(side.name)} ${isOwn ? '(You)' : '(Opponent)'}</span>
@@ -10077,9 +11502,10 @@ Check your Browserslist config to be sure that your targets are set up correctly
                                         const damage = getCalculatedAttackDmg(side.active, attack);
                                         const multiplier = getAttackMultiplier(side.active, attack);
                                         const disabled = side.active.disabledAttackId === attack.id;
-                                        const content = `<div class="flex flex-wrap items-center justify-between gap-1 font-bold"><span class="${isOwn ? 'text-amber-200' : 'text-rose-200'}">${escapeOnlineText(attack.name)}${multiplier > 1 ? ` <span class="rounded bg-amber-400 px-1 text-[9px] text-slate-950">⚡ ${multiplier}x</span>` : ''}</span>${damage > 0 ? `<span class="text-xs font-extrabold ${multiplier > 1 ? 'text-amber-300' : 'text-rose-400'}">💥 ${damage} DMG</span>` : ''}</div><p class="mt-0.5 text-[10px] leading-snug text-slate-300">${escapeOnlineText(attack.desc)}</p>${disabled ? `<span class="mt-1 inline-block rounded bg-rose-950 px-1 py-0.5 text-[9px] text-rose-300">🚫 Locked for ${side.active.disabledTurnsLeft} turns</span>` : ''}`;
-                                        return isOwn
-                                          ? `<button onclick="onlineAttack(${attackIndex})" ${!myTurn || side.awaitingReplacement || disabled ? 'disabled' : ''} class="block w-full rounded-xl border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${disabled ? 'border-rose-800 bg-rose-950/40' : 'border-slate-700 bg-gradient-to-r from-slate-900 to-slate-800 hover:border-amber-400'}">${content}</button>`
+                                        const coolingDown = isAttackCoolingDown(side.active, attack);
+                                        const content = `<div class="flex flex-wrap items-center justify-between gap-1 font-bold"><span class="${isOwn ? 'text-amber-200' : 'text-rose-200'}">${escapeOnlineText(attack.name)}${multiplier > 1 ? ` <span class="rounded bg-amber-400 px-1 text-[9px] text-slate-950">⚡ ${multiplier}x</span>` : ''}</span>${damage > 0 ? `<span class="text-xs font-extrabold ${multiplier > 1 ? 'text-amber-300' : 'text-rose-400'}">💥 ${damage} DMG</span>` : ''}</div><p class="mt-0.5 text-[10px] leading-snug text-slate-300">${escapeOnlineText(attack.desc)}</p>${disabled ? `<span class="mt-1 inline-block rounded bg-rose-950 px-1 py-0.5 text-[9px] text-rose-300">🚫 Locked for ${side.active.disabledTurnsLeft} turns</span>` : coolingDown ? `<span class="mt-1 inline-block rounded bg-rose-950 px-1 py-0.5 text-[9px] text-rose-300">⏳ Cooldown: ${side.active.wheelCooldown} turns</span>` : ''}`;
+                                        return isOwn && state.gameMode !== '2v2'
+                                          ? `<button onclick="onlineAttack(${attackIndex})" ${!myTurn || side.awaitingReplacement || disabled || coolingDown ? 'disabled' : ''} class="block w-full rounded-xl border p-2 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${disabled || coolingDown ? 'border-rose-800 bg-rose-950/40' : 'border-slate-700 bg-gradient-to-r from-slate-900 to-slate-800 hover:border-amber-400'}">${content}</button>`
                                           : `<div class="border-b border-white/5 pb-1.5 text-[10px] last:border-0 last:pb-0">${content}</div>`;
                                       }).join('')}
                                     </div>
@@ -10087,8 +11513,21 @@ Check your Browserslist config to be sure that your targets are set up correctly
                                 </div>
                               </div>
                             ` : `<div class="flex h-28 w-full max-w-lg flex-col items-center justify-center rounded-2xl border-2 border-dashed ${isOwn ? 'border-amber-400/50 bg-amber-500/5' : 'border-rose-500/30'} text-center"><span class="text-xl">🎴</span><b class="text-xs uppercase ${isOwn ? 'text-amber-300' : 'text-rose-300'}">${isOwn ? 'Your active card is down' : 'Opponent is choosing a card'}</b></div>`}
+                            ${state.gameMode === '2v2' ? `
+                              ${renderCompactTeamCard(side?.active, isOwn ? 'Your active fighter' : 'Opponent active', isOwn)}
+                              ${renderCompactTeamCard(side?.partner, isOwn ? 'Your partner' : 'Opponent partner', isOwn)}
+                            ` : ''}
                           </div>
                         `).join('')}
+                        ${state.gameMode === '2v2' ? `
+                          ${renderTwoVsTwoControls(
+                            [own?.active, own?.partner],
+                            [opponent?.active, opponent?.partner],
+                            'online-battle',
+                            Boolean(myTurn && own && !own.awaitingReplacement),
+                            'onlineAttackTeam'
+                          )}
+                        ` : ''}
                         <div class="text-center">
                           <span class="inline-block rounded-full border px-4 py-1 text-[10px] font-black uppercase tracking-wider shadow-md sm:text-xs ${own?.awaitingReplacement ? 'animate-pulse border-amber-300 bg-amber-400 text-slate-950' : myTurn ? 'border-emerald-600 bg-emerald-950 text-emerald-300' : 'border-rose-800 bg-rose-950 text-rose-300'}">${own?.awaitingReplacement ? '⚠️ Choose your next fighter below' : myTurn ? '⚔️ Your turn — attack or swap' : `⏳ Waiting for ${escapeOnlineText(opponent?.name || 'opponent')}…`}</span>
                         </div>
